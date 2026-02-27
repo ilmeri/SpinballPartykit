@@ -112,7 +112,9 @@ const AUTO_REMATCH_DELAY = 3.0;
 let myShootMode = 0;
 let aimPos = null;
 let lastAimSend = 0;
+let mode2ShootTime = 0; // timestamp of last mode 2 shoot (grace period for server state)
 const AIM_SEND_INTERVAL = 100; // ~10Hz throttle for aim updates
+const MODE2_SHOOT_GRACE = 200; // ms: ignore server state/power after mode 2 shoot
 const MODE_BTN = { x: 10, y: 8, w: 28, h: 24, gap: 4 };
 
 // ===== Player =====
@@ -613,9 +615,11 @@ function unpackState(buf) {
     smoothX += p.x - buf[o];
     smoothY += p.y - buf[o+1];
     p.x = buf[o]; p.y = buf[o+1]; p.vx = buf[o+2]; p.vy = buf[o+3];
-    // Click-aim mode: client is authoritative for angle; during active aim also for state/power
+    // Click-aim mode: client is authoritative for angle;
+    // during active aim OR brief post-shoot grace, also for state/power
     if (myShootMode === 1) {
-      if (!aimPos) { p.power = buf[o+5]; p.state = buf[o+6]; }
+      const inGrace = aimPos || (performance.now() - mode2ShootTime < MODE2_SHOOT_GRACE);
+      if (!inGrace) { p.power = buf[o+5]; p.state = buf[o+6]; }
     } else {
       p.angle = buf[o+4]; p.power = buf[o+5]; p.state = buf[o+6];
     }
@@ -816,7 +820,7 @@ function handleInputUp() {
 function handleMode2Down(pos) {
   if (goalScoredBy || winner || mySlot < 0) return;
   const p = players[mySlot];
-  if (!p || p.state === ST_AIM) return;
+  if (!p) return;
   aimPos = pos;
   p.angle = Math.atan2(pos.y - p.y, pos.x - p.x);
   p.state = ST_AIM; p.power = 0;
@@ -843,6 +847,7 @@ function handleMode2Up() {
   if (ws) ws.send(JSON.stringify({ type: 'input', action: 'up', angle: p.angle }));
   p.shoot();
   aimPos = null;
+  mode2ShootTime = performance.now();
 }
 
 // ===== Mode Toggle Buttons =====

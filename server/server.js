@@ -381,7 +381,8 @@ export default class Server {
 
     this.slots[slot] = null;
     this.names[slot] = '';
-    if (this.players[slot]) this.players[slot].occupied = false;
+    this.shootModes[slot] = 0;
+    if (this.players[slot]) { this.players[slot].occupied = false; this.players[slot].shootMode = 0; }
     this.rematchVotes.delete(conn.id);
 
     // Tell remaining players
