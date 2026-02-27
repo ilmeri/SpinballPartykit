@@ -1,10 +1,11 @@
 // server.js — PartyKit game server for Faceballs
 // Physics and game logic ported from index.html
 
-// ===== Physics Constants =====
-const FRIC = 0.982, REST = 0.78, MIN_V = 0.15;
-const MAX_POW = 16, POW_RATE = 20;
-const ROT_SPD = 2.8;
+// ===== Physics Constants (tunable at runtime) =====
+let FRIC = 0.982, REST = 0.78;
+const MIN_V = 0.15;
+let MAX_POW = 16, POW_RATE = 20;
+let ROT_SPD = 2.8;
 const PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
@@ -459,6 +460,16 @@ export default class Server {
         if (this.rematchVotes.size >= total) {
           this.startNewGame();
         }
+        break;
+      }
+      case 'params': {
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+        if (msg.MAX_POW !== undefined) MAX_POW = clamp(msg.MAX_POW, 4, 40);
+        if (msg.POW_RATE !== undefined) POW_RATE = clamp(msg.POW_RATE, 5, 60);
+        if (msg.FRIC !== undefined) FRIC = clamp(msg.FRIC, 0.95, 0.999);
+        if (msg.ROT_SPD !== undefined) ROT_SPD = clamp(msg.ROT_SPD, 0.5, 8);
+        if (msg.REST !== undefined) REST = clamp(msg.REST, 0.3, 1.2);
+        this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST });
         break;
       }
     }

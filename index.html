@@ -37,10 +37,11 @@ const FCX = (FL + FR) / 2, FCY = (FT + FB) / 2;
 const GH = 160, GD = 34;
 const GT = FCY - GH / 2, GB = FCY + GH / 2;
 
-// ===== Physics =====
-const FRIC = 0.982, REST = 0.78, MIN_V = 0.15;
-const MAX_POW = 16, POW_RATE = 20;
-const ROT_SPD = 2.8;
+// ===== Physics (tunable at runtime) =====
+let FRIC = 0.982, REST = 0.78;
+const MIN_V = 0.15;
+let MAX_POW = 16, POW_RATE = 20;
+let ROT_SPD = 2.8;
 const PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
@@ -116,6 +117,29 @@ let mode2ShootTime = 0; // timestamp of last mode 2 shoot (grace period for serv
 const AIM_SEND_INTERVAL = 100; // ~10Hz throttle for aim updates
 const MODE2_SHOOT_GRACE = 200; // ms: ignore server state/power after mode 2 shoot
 const MODE_BTN = { x: 10, y: 8, w: 28, h: 24, gap: 4 };
+
+// Tuning panel
+let tuningOpen = false;
+const TUNE_BTN = { x: W - 36, y: 8, w: 28, h: 24 };
+const TUNE_PANEL = { x: W - 220, y: 36, w: 212, rowH: 28, pad: 8 };
+const TUNABLES = [
+  { key: 'MAX_POW',  label: 'Power',    min: 4,    max: 40,    step: 2,     dp: 0 },
+  { key: 'POW_RATE', label: 'Charge',   min: 5,    max: 60,    step: 5,     dp: 0 },
+  { key: 'FRIC',     label: 'Friction', min: 0.95, max: 0.999, step: 0.003, dp: 3 },
+  { key: 'ROT_SPD',  label: 'Rotation', min: 0.5,  max: 8,     step: 0.3,   dp: 1 },
+  { key: 'REST',     label: 'Bounce',   min: 0.3,  max: 1.2,   step: 0.05,  dp: 2 },
+];
+function getParam(k) {
+  if (k === 'MAX_POW') return MAX_POW; if (k === 'POW_RATE') return POW_RATE;
+  if (k === 'FRIC') return FRIC; if (k === 'ROT_SPD') return ROT_SPD; if (k === 'REST') return REST;
+}
+function setParam(k, v) {
+  if (k === 'MAX_POW') MAX_POW = v; else if (k === 'POW_RATE') POW_RATE = v;
+  else if (k === 'FRIC') FRIC = v; else if (k === 'ROT_SPD') ROT_SPD = v; else if (k === 'REST') REST = v;
+}
+function sendParams() {
+  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST }));
+}
 
 // ===== Player =====
 class Player {
@@ -588,6 +612,69 @@ function drawModeButtons() {
   }
 }
 
+function drawTuningPanel() {
+  // Toggle button (top-right)
+  ctx.fillStyle = tuningOpen ? '#2a80ff' : 'rgba(255,255,255,0.1)';
+  ctx.fillRect(TUNE_BTN.x, TUNE_BTN.y, TUNE_BTN.w, TUNE_BTN.h);
+  ctx.strokeStyle = tuningOpen ? '#5ca0f0' : '#555';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(TUNE_BTN.x, TUNE_BTN.y, TUNE_BTN.w, TUNE_BTN.h);
+  ctx.fillStyle = tuningOpen ? '#fff' : '#888';
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('\u2699', TUNE_BTN.x + TUNE_BTN.w / 2, TUNE_BTN.y + TUNE_BTN.h / 2);
+  if (!tuningOpen) return;
+  const { x, y, w, rowH, pad } = TUNE_PANEL;
+  const h = pad * 2 + TUNABLES.length * rowH;
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, w, h);
+  const bw = 24, bh = 20;
+  for (let i = 0; i < TUNABLES.length; i++) {
+    const t = TUNABLES[i];
+    const ry = y + pad + i * rowH;
+    ctx.font = '12px sans-serif'; ctx.fillStyle = '#aaa'; ctx.textAlign = 'left';
+    ctx.fillText(t.label, x + 8, ry + rowH / 2);
+    ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    ctx.fillText(getParam(t.key).toFixed(t.dp), x + w / 2 + 10, ry + rowH / 2);
+    const minusX = x + w - 60, plusX = x + w - 32, btnY = ry + (rowH - bh) / 2;
+    ctx.fillStyle = '#c43030'; ctx.fillRect(minusX, btnY, bw, bh);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('\u2212', minusX + bw / 2, ry + rowH / 2);
+    ctx.fillStyle = '#2d8a4e'; ctx.fillRect(plusX, btnY, bw, bh);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('+', plusX + bw / 2, ry + rowH / 2);
+  }
+}
+
+function handleTuningClick(pos) {
+  if (inRect(pos, TUNE_BTN.x, TUNE_BTN.y, TUNE_BTN.w, TUNE_BTN.h)) {
+    tuningOpen = !tuningOpen; return true;
+  }
+  if (!tuningOpen) return false;
+  const { x, y, w, rowH, pad } = TUNE_PANEL;
+  const h = pad * 2 + TUNABLES.length * rowH;
+  if (inRect(pos, x, y, w, h)) {
+    const bw = 24, bh = 20;
+    for (let i = 0; i < TUNABLES.length; i++) {
+      const t = TUNABLES[i];
+      const ry = y + pad + i * rowH;
+      const minusX = x + w - 60, plusX = x + w - 32, btnY = ry + (rowH - bh) / 2;
+      if (inRect(pos, minusX, btnY, bw, bh)) {
+        setParam(t.key, Math.max(t.min, +(getParam(t.key) - t.step).toFixed(t.dp)));
+        sendParams(); return true;
+      }
+      if (inRect(pos, plusX, btnY, bw, bh)) {
+        setParam(t.key, Math.min(t.max, +(getParam(t.key) + t.step).toFixed(t.dp)));
+        sendParams(); return true;
+      }
+    }
+    return true; // consumed by panel area
+  }
+  return false;
+}
+
 function drawGoalCelebration() {
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -759,6 +846,13 @@ function joinNetRoom(roomId) {
       case 'rematch':
         rematchVoteCount = msg.votes;
         rematchVoteTotal = msg.total;
+        break;
+      case 'params':
+        if (msg.MAX_POW !== undefined) MAX_POW = msg.MAX_POW;
+        if (msg.POW_RATE !== undefined) POW_RATE = msg.POW_RATE;
+        if (msg.FRIC !== undefined) FRIC = msg.FRIC;
+        if (msg.ROT_SPD !== undefined) ROT_SPD = msg.ROT_SPD;
+        if (msg.REST !== undefined) REST = msg.REST;
         break;
     }
   };
@@ -952,6 +1046,7 @@ window.addEventListener('keyup', e => {
 // Mouse — canvas handles UI clicks + game input
 cvs.addEventListener('mousedown', e => {
   const pos = canvasPos(e);
+  if (gameState === 'PLAYING' && handleTuningClick(pos)) return;
   if (gameState === 'PLAYING' && handleModeButtonClick(pos)) return;
   const result = handleClick(pos);
   if (result === 'focusName') setTimeout(() => nameEl.focus(), 0); // defer for desktop
@@ -974,6 +1069,7 @@ cvs.addEventListener('mouseup', () => {
 cvs.addEventListener('touchstart', e => {
   e.preventDefault();
   const pos = canvasPos(e);
+  if (gameState === 'PLAYING' && handleTuningClick(pos)) return;
   if (gameState === 'PLAYING' && handleModeButtonClick(pos)) return;
   const result = handleClick(pos);
   if (result === 'focusName') nameEl.focus(); // must be synchronous for mobile keyboard
@@ -1058,11 +1154,16 @@ function fixedUpdate() {
       circleCol(me, players[i], PMASS, PMASS);
     }
   }
-  // Local ball prediction
+  // Local ball prediction (including remote player collisions)
   updateFb();
   wallBounce(fb);
   postCol(fb);
   if (me && circleCol(me, fb, PMASS, BMASS)) lastToucher = me;
+  for (let i = 0; i < 4; i++) {
+    if (i === mySlot) continue;
+    if (players[i] && players[i].occupied && circleCol(players[i], fb, PMASS, BMASS))
+      lastToucher = players[i];
+  }
   // Decay prediction smoothing
   smoothX *= SMOOTH_DECAY;
   smoothY *= SMOOTH_DECAY;
@@ -1082,6 +1183,7 @@ function renderGame() {
   for (const p of players) drawPlayer(p);
   drawScoreboard();
   drawModeButtons();
+  drawTuningPanel();
   if (goalScoredBy && !winner) drawGoalCelebration();
 }
 
