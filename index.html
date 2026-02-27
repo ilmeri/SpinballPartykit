@@ -108,6 +108,13 @@ const INTERP_MS = 3 * (1 / 60) * 1000; // ~50ms (server sends at 20Hz = every 3 
 let autoRematchTimer = 0;
 const AUTO_REMATCH_DELAY = 3.0;
 
+// Shoot mode (0 = classic auto-rotate, 1 = click-aim)
+let myShootMode = 0;
+let aimPos = null;
+let lastAimSend = 0;
+const AIM_SEND_INTERVAL = 100; // ~10Hz throttle for aim updates
+const MODE_BTN = { x: 10, y: 8, w: 28, h: 24, gap: 4 };
+
 // ===== Player =====
 class Player {
   constructor(sx, sy, color, light, idx, team) {
@@ -553,10 +560,30 @@ function drawScoreboard() {
   ctx.font = 'bold 28px monospace'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
   ctx.fillText(teamScores[1], W / 2 + 100, y);
   ctx.font = '13px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.textAlign = 'center';
-  ctx.fillText('Hold to aim & charge, release to shoot  |  First to ' + WIN_SCORE, W / 2, H - 16);
+  const hint = myShootMode === 0
+    ? 'Hold to aim & charge, release to shoot'
+    : 'Click field to aim, hold to charge, release to shoot';
+  ctx.fillText(hint + '  |  First to ' + WIN_SCORE, W / 2, H - 16);
   // Debug overlay
   ctx.font = '11px monospace'; ctx.fillStyle = '#ff0'; ctx.textAlign = 'left';
   ctx.fillText(`slot=${mySlot} id=${ws ? ws.id.slice(0,6) : '-'}`, 8, H - 4);
+}
+
+function drawModeButtons() {
+  if (gameState !== 'PLAYING') return;
+  for (let i = 0; i < 2; i++) {
+    const x = MODE_BTN.x + i * (MODE_BTN.w + MODE_BTN.gap);
+    const active = myShootMode === i;
+    ctx.fillStyle = active ? '#2a80ff' : 'rgba(255,255,255,0.1)';
+    ctx.fillRect(x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h);
+    ctx.strokeStyle = active ? '#5ca0f0' : '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h);
+    ctx.fillStyle = active ? '#fff' : '#888';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(i + 1), x + MODE_BTN.w / 2, MODE_BTN.y + MODE_BTN.h / 2);
+  }
 }
 
 function drawGoalCelebration() {
@@ -780,6 +807,54 @@ function handleInputUp() {
   }
 }
 
+// ===== Mode 2 (click-aim) Input =====
+function handleMode2Down(pos) {
+  if (goalScoredBy || winner || mySlot < 0) return;
+  const p = players[mySlot];
+  if (!p || p.state === ST_AIM) return;
+  aimPos = pos;
+  p.angle = Math.atan2(pos.y - p.y, pos.x - p.x);
+  p.state = ST_AIM; p.power = 0;
+  if (ws) ws.send(JSON.stringify({ type: 'input', action: 'down', angle: p.angle }));
+}
+
+function handleMode2Move(pos) {
+  if (mySlot < 0) return;
+  const p = players[mySlot];
+  if (!p || p.state !== ST_AIM) return;
+  aimPos = pos;
+  p.angle = Math.atan2(pos.y - p.y, pos.x - p.x);
+  const now = performance.now();
+  if (now - lastAimSend >= AIM_SEND_INTERVAL) {
+    lastAimSend = now;
+    if (ws) ws.send(JSON.stringify({ type: 'input', action: 'aim', angle: p.angle }));
+  }
+}
+
+function handleMode2Up() {
+  if (mySlot < 0) { aimPos = null; return; }
+  const p = players[mySlot];
+  if (!p || p.state !== ST_AIM) { aimPos = null; return; }
+  if (ws) ws.send(JSON.stringify({ type: 'input', action: 'up', angle: p.angle }));
+  p.shoot();
+  aimPos = null;
+}
+
+// ===== Mode Toggle Buttons =====
+function handleModeButtonClick(pos) {
+  if (gameState !== 'PLAYING') return false;
+  for (let i = 0; i < 2; i++) {
+    const x = MODE_BTN.x + i * (MODE_BTN.w + MODE_BTN.gap);
+    if (inRect(pos, x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h)) {
+      myShootMode = i;
+      aimPos = null;
+      if (ws) ws.send(JSON.stringify({ type: 'mode', mode: i }));
+      return true;
+    }
+  }
+  return false;
+}
+
 function handleClick(pos) {
   if (gameState === 'MENU') {
     if (showCodeInput) {
@@ -856,54 +931,86 @@ window.addEventListener('keydown', e => {
     if (codeInput.length < 4 && /^[a-zA-Z]$/.test(e.key)) codeInput += e.key.toUpperCase();
     return;
   }
-  if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); handleInputDown(); }
+  if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (myShootMode === 0) handleInputDown(); }
 });
 
 window.addEventListener('keyup', e => {
   if (nameEditing || showCodeInput) return;
-  if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); handleInputUp(); }
+  if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (myShootMode === 0) handleInputUp(); }
 });
 
 // Mouse — canvas handles UI clicks + game input
 cvs.addEventListener('mousedown', e => {
   const pos = canvasPos(e);
+  if (gameState === 'PLAYING' && handleModeButtonClick(pos)) return;
   const result = handleClick(pos);
   if (result === 'focusName') setTimeout(() => nameEl.focus(), 0); // defer for desktop
-  if (gameState === 'PLAYING') handleInputDown();
+  if (gameState === 'PLAYING') {
+    if (myShootMode === 1) handleMode2Down(pos);
+    else handleInputDown();
+  }
 });
-cvs.addEventListener('mouseup', () => { if (gameState === 'PLAYING') handleInputUp(); });
+cvs.addEventListener('mousemove', e => {
+  if (gameState === 'PLAYING' && myShootMode === 1 && aimPos) handleMode2Move(canvasPos(e));
+});
+cvs.addEventListener('mouseup', () => {
+  if (gameState === 'PLAYING') {
+    if (myShootMode === 1 && aimPos) handleMode2Up();
+    else handleInputUp();
+  }
+});
 
 // Touch — canvas handles UI clicks + game input
 cvs.addEventListener('touchstart', e => {
   e.preventDefault();
   const pos = canvasPos(e);
+  if (gameState === 'PLAYING' && handleModeButtonClick(pos)) return;
   const result = handleClick(pos);
   if (result === 'focusName') nameEl.focus(); // must be synchronous for mobile keyboard
-  if (gameState === 'PLAYING') handleInputDown();
+  if (gameState === 'PLAYING') {
+    if (myShootMode === 1) handleMode2Down(pos);
+    else handleInputDown();
+  }
+}, { passive: false });
+cvs.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (gameState === 'PLAYING' && myShootMode === 1 && aimPos) handleMode2Move(canvasPos(e));
 }, { passive: false });
 cvs.addEventListener('touchend', e => {
   e.preventDefault();
-  if (gameState === 'PLAYING') handleInputUp();
+  if (gameState === 'PLAYING') {
+    if (myShootMode === 1 && aimPos) handleMode2Up();
+    else handleInputUp();
+  }
 }, { passive: false });
 
 // Document-level — catch touches/clicks outside canvas (black area) for game input only
 document.addEventListener('mousedown', e => {
   if (e.target === cvs) return; // already handled above
-  if (gameState === 'PLAYING') handleInputDown();
+  if (gameState === 'PLAYING' && myShootMode === 0) handleInputDown();
+});
+document.addEventListener('mousemove', e => {
+  if (gameState === 'PLAYING' && myShootMode === 1 && aimPos) handleMode2Move(canvasPos(e));
 });
 document.addEventListener('mouseup', e => {
   if (e.target === cvs) return;
-  if (gameState === 'PLAYING') handleInputUp();
+  if (gameState === 'PLAYING') {
+    if (myShootMode === 1 && aimPos) handleMode2Up();
+    else handleInputUp();
+  }
 });
 document.addEventListener('touchstart', e => {
   if (e.target === cvs) return;
   e.preventDefault();
-  if (gameState === 'PLAYING') handleInputDown();
+  if (gameState === 'PLAYING' && myShootMode === 0) handleInputDown();
 }, { passive: false });
 document.addEventListener('touchend', e => {
   if (e.target === cvs) return;
   e.preventDefault();
-  if (gameState === 'PLAYING') handleInputUp();
+  if (gameState === 'PLAYING') {
+    if (myShootMode === 1 && aimPos) handleMode2Up();
+    else handleInputUp();
+  }
 }, { passive: false });
 
 // Fullscreen (with vendor prefixes for mobile)
@@ -929,8 +1036,8 @@ function fixedUpdate() {
   // Client prediction: own player + ball (others handled by interpolation)
   const me = (mySlot >= 0 && mySlot < 4) ? players[mySlot] : null;
   if (me && me.occupied) {
-    if (me.state === ST_ROT) me.angle += ROT_SPD * FDT;
-    else if (me.state === ST_AIM) me.power = Math.min(me.power + POW_RATE * FDT, MAX_POW);
+    if (myShootMode === 0 && me.state === ST_ROT) me.angle += ROT_SPD * FDT;
+    if (me.state === ST_AIM) me.power = Math.min(me.power + POW_RATE * FDT, MAX_POW);
     me.x += me.vx; me.y += me.vy;
     me.vx *= FRIC; me.vy *= FRIC;
     if (Math.abs(me.vx) < MIN_V && Math.abs(me.vy) < MIN_V) { me.vx = 0; me.vy = 0; }
@@ -964,6 +1071,7 @@ function renderGame() {
   drawFootball();
   for (const p of players) drawPlayer(p);
   drawScoreboard();
+  drawModeButtons();
   if (goalScoredBy && !winner) drawGoalCelebration();
 }
 

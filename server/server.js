@@ -109,6 +109,7 @@ class Player {
     this.angle = Math.random() * Math.PI * 2;
     this.power = 0; this.state = ST_ROT;
     this.occupied = false;
+    this.shootMode = 0;
   }
   reset() {
     this.x = this.sx; this.y = this.sy; this.vx = 0; this.vy = 0;
@@ -117,8 +118,8 @@ class Player {
   }
   update(dt) {
     if (this.occupied) {
-      if (this.state === ST_ROT) this.angle += ROT_SPD * dt;
-      else if (this.state === ST_AIM) this.power = Math.min(this.power + POW_RATE * dt, MAX_POW);
+      if (this.shootMode === 0 && this.state === ST_ROT) this.angle += ROT_SPD * dt;
+      if (this.state === ST_AIM) this.power = Math.min(this.power + POW_RATE * dt, MAX_POW);
     }
     this.x += this.vx; this.y += this.vy;
     this.vx *= FRIC; this.vy *= FRIC;
@@ -157,6 +158,7 @@ export default class Server {
     this.syncCounter = 0;
     this.loopInterval = null;
     this.rematchVotes = new Set();
+    this.shootModes = [0, 0, 0, 0];
     this.autoRematchTimer = 0;
   }
 
@@ -178,7 +180,10 @@ export default class Server {
     this.goalScoredBy = null;
     this.goalTimer = 0;
     this.winner = null;
-    for (let i = 0; i < 4; i++) this.players[i].occupied = this.slots[i] !== null;
+    for (let i = 0; i < 4; i++) {
+      this.players[i].occupied = this.slots[i] !== null;
+      this.players[i].shootMode = this.shootModes[i];
+    }
   }
 
   resetField() {
@@ -415,8 +420,16 @@ export default class Server {
         if (slot < 0 || this.gameState !== 'PLAYING') return;
         const p = this.players[slot];
         if (!p || this.goalScoredBy || this.winner) return;
+        if (msg.angle !== undefined) p.angle = msg.angle;
         if (msg.action === 'down' && p.state !== ST_AIM) { p.state = ST_AIM; p.power = 0; }
         else if (msg.action === 'up' && p.state === ST_AIM) p.shoot();
+        break;
+      }
+      case 'mode': {
+        if (slot >= 0 && (msg.mode === 0 || msg.mode === 1)) {
+          this.shootModes[slot] = msg.mode;
+          if (this.players[slot]) this.players[slot].shootMode = msg.mode;
+        }
         break;
       }
       case 'name': {
