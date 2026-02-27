@@ -336,16 +336,43 @@ function buildAnnouncerPrompt(ev) {
   return userMsg;
 }
 
+const HUME_ACTING = {
+  goal: [
+    'screaming with excitement, over-the-top, barely able to contain yourself',
+    'absolutely losing your mind, voice cracking from intensity',
+    'operatic triumph, singing the words with joy',
+    'hushed disbelief building to explosive screaming',
+  ],
+  save: [
+    'shocked and amazed, gasping, disbelief',
+    'breathless, stunned, whispering in awe',
+    'furious and impressed at the same time, growling respect',
+  ],
+  nearMiss: [
+    'dramatic tension, sharp intake of breath, on the edge of your seat',
+    'agonized groan, clutching your head in despair',
+    'nervous laughter, barely surviving the suspense',
+  ],
+  gameStart: [
+    'hyped up, energetic, welcoming a roaring crowd',
+    'booming authority, commanding the arena like a wrestling announcer',
+    'conspiratorial whisper building to a shout',
+  ],
+  gameOver: [
+    'dramatic finale, epic conclusion, building to a crescendo',
+    'tearful, overwhelmed with emotion, voice breaking',
+    'smug satisfaction, like you predicted it all along',
+  ],
+  commentary: [
+    'smooth confident broadcaster, classic sports commentator',
+    'paranoid whisper, like sharing a secret conspiracy',
+    'wistful nostalgia, reminiscing about the old days',
+    'barely suppressed giggles, finding everything hilarious',
+  ],
+};
 function getHumeActing(event) {
-  switch (event) {
-    case 'goal': return 'screaming with excitement, over-the-top sports announcer, barely able to contain yourself';
-    case 'save': return 'shocked and amazed, gasping, disbelief';
-    case 'nearMiss': return 'dramatic tension, sharp intake of breath, on the edge of your seat';
-    case 'gameStart': return 'hyped up, energetic, welcoming a roaring crowd';
-    case 'gameOver': return 'dramatic finale, epic conclusion, building to a crescendo';
-    case 'commentary': return 'smooth confident broadcaster, classic sports commentator';
-    default: return 'enthusiastic sports announcer';
-  }
+  const options = HUME_ACTING[event] || ['enthusiastic sports announcer'];
+  return options[Math.floor(Math.random() * options.length)];
 }
 
 async function blobToBase64(blob) {
@@ -354,6 +381,44 @@ async function blobToBase64(blob) {
     reader.onloadend = () => resolve(reader.result.split(',')[1]);
     reader.readAsDataURL(blob);
   });
+}
+
+const ANNOUNCER_PERSONAS = [
+  'You are a completely unhinged WWE-style wrestling announcer calling a Faceballs match. Treat every play like a championship moment. Scream. Use wrestling metaphors. "BAH GAWD!"',
+  'You are David Attenborough narrating a Faceballs match like a nature documentary. Treat the players as fascinating creatures in their natural habitat. Hushed, reverent wonder.',
+  'You are a medieval herald announcing a Faceballs match as if it were a grand jousting tournament. Use "ye", "hark", "forsooth". Speak of honor and glory.',
+  'You are a telenovela narrator for a Faceballs match. Everything is dramatic betrayal, forbidden love, and destiny. Passion drips from every word.',
+  'You are a hyperactive anime play-by-play announcer. Reference power levels, ultimate moves, and dramatic transformations. "IMPOSSIBLE! He\'s broken through his limits!"',
+  'You are a noir detective narrating a Faceballs match like a 1940s crime story. Dark, moody, world-weary. "The ball rolled into the net like a bad memory."',
+  'You are a Silicon Valley tech bro live-commentating Faceballs. Everything is "disrupting the space", "10x play", "paradigm shift". Pitch the goals like startup ideas.',
+  'You are a dramatic opera announcer narrating Faceballs. Everything is a grand tragedy or triumph. Reference acts, arias, and the audience weeping.',
+  'You are a conspiracy theorist calling a Faceballs match. Every goal was planned by the Illuminati. The ball trajectory proves the Earth is flat. Connect dots that don\'t exist.',
+  'You are Gordon Ramsay commentating Faceballs. Furious. Disappointed. Occasionally impressed. "That defense was RAW! Absolutely DONKEY behavior!"',
+  'You are a grandma watching her first Faceballs match. Confused but supportive. Mix up the rules. Offer snacks. "Oh my, is that a touchdown? Good for him!"',
+  'You are a pirate captain narrating a Faceballs match. Everything is about treasure, the seven seas, and scurvy dogs. "ARRR, that goal be worth its weight in doubloons!"',
+];
+
+const STYLE_SPICE = [
+  'Make a wild comparison to something completely unrelated.',
+  'Invent a ridiculous statistic.',
+  'Break the fourth wall briefly.',
+  'Reference an imaginary rivalry or backstory between players.',
+  'Use an extended metaphor from cooking or food.',
+  'Pretend you\'re getting emotional and tearing up.',
+  'Suddenly question reality for a moment.',
+  'Make up a dramatic nickname for a player on the spot.',
+  'Reference the weather or atmosphere in the imaginary stadium.',
+  'Briefly pretend the game has cosmic or supernatural significance.',
+  'Work in a pun or wordplay.',
+  'Narrate as if the replay is in slow motion.',
+];
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function buildSystemPrompt() {
+  const persona = pick(ANNOUNCER_PERSONAS);
+  const spice = pick(STYLE_SPICE);
+  return `${persona}\n\nThe game is Faceballs — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Reference player names when available. Never use hashtags or emojis.\n\nStyle twist for this line: ${spice}`;
 }
 
 async function generateAnnouncement(ev) {
@@ -367,10 +432,10 @@ async function generateAnnouncement(ev) {
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + announcerKeys.openai },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        temperature: 1.0,
+        temperature: 1.2,
         max_tokens: 80,
         messages: [
-          { role: 'system', content: 'You are an over-the-top, hilarious sports announcer for Faceballs — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Be dramatic, funny, and occasionally absurd. Reference player names when available. Never use hashtags or emojis.' },
+          { role: 'system', content: buildSystemPrompt() },
           { role: 'user', content: userMsg }
         ]
       })
