@@ -120,6 +120,7 @@ const MODE_BTN = { x: 10, y: 8, w: 28, h: 24, gap: 4 };
 
 // Tuning panel
 let tuningOpen = false;
+let showAimLine = false;
 const TUNE_BTN = { x: W - 36, y: 8, w: 28, h: 24 };
 const TUNE_PANEL = { x: W - 220, y: 36, w: 212, rowH: 28, pad: 8 };
 const TUNABLES = [
@@ -520,6 +521,27 @@ function drawFootball() {
   }
 }
 
+function aimLineEnd(px, py, angle) {
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  let tMin = Infinity;
+  if (dx > 0) {
+    let t = (FR - px) / dx;
+    const hy = py + dy * t;
+    if (hy >= GT && hy <= GB) t = (FR + GD - px) / dx;
+    tMin = Math.min(tMin, t);
+  }
+  if (dx < 0) {
+    let t = (FL - px) / dx;
+    const hy = py + dy * t;
+    if (hy >= GT && hy <= GB) t = (FL - GD - px) / dx;
+    tMin = Math.min(tMin, t);
+  }
+  if (dy > 0) tMin = Math.min(tMin, (FB - py) / dy);
+  if (dy < 0) tMin = Math.min(tMin, (FT - py) / dy);
+  if (tMin <= 0 || tMin === Infinity) return null;
+  return { x: px + dx * tMin, y: py + dy * tMin };
+}
+
 function drawPlayer(p) {
   let dx = 0, dy = 0;
   if (p.idx === mySlot) { dx = smoothX; dy = smoothY; }
@@ -552,6 +574,18 @@ function drawPlayer(p) {
   ctx.moveTo(aex, aey);
   ctx.lineTo(aex - hl * Math.cos(p.angle + ha), aey - hl * Math.sin(p.angle + ha));
   ctx.stroke();
+  // Dotted aimline to field border
+  if (showAimLine && p.occupied) {
+    const end = aimLineEnd(px, py, p.angle);
+    if (end) {
+      ctx.save();
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath(); ctx.moveTo(aex, aey); ctx.lineTo(end.x, end.y);
+      ctx.strokeStyle = p.light || 'rgba(255,255,255,0.4)';
+      ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.restore();
+    }
+  }
   if (p.state === ST_AIM) {
     const pct = p.power / MAX_POW;
     ctx.beginPath(); ctx.arc(px, py, p.r + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
@@ -625,7 +659,8 @@ function drawTuningPanel() {
   ctx.fillText('\u2699', TUNE_BTN.x + TUNE_BTN.w / 2, TUNE_BTN.y + TUNE_BTN.h / 2);
   if (!tuningOpen) return;
   const { x, y, w, rowH, pad } = TUNE_PANEL;
-  const h = pad * 2 + TUNABLES.length * rowH;
+  const totalRows = TUNABLES.length + 1; // +1 for aim line toggle
+  const h = pad * 2 + totalRows * rowH;
   ctx.fillStyle = 'rgba(0,0,0,0.85)';
   ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
@@ -646,6 +681,15 @@ function drawTuningPanel() {
     ctx.fillStyle = '#fff';
     ctx.fillText('+', plusX + bw / 2, ry + rowH / 2);
   }
+  // Aim Line toggle row
+  const ary = y + pad + TUNABLES.length * rowH;
+  ctx.font = '12px sans-serif'; ctx.fillStyle = '#aaa'; ctx.textAlign = 'left';
+  ctx.fillText('Aim Line', x + 8, ary + rowH / 2);
+  const tbw = 52, tbh = 20, tbx = x + w - tbw - 8, tby = ary + (rowH - tbh) / 2;
+  ctx.fillStyle = showAimLine ? '#2a80ff' : '#444';
+  ctx.fillRect(tbx, tby, tbw, tbh);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(showAimLine ? 'ON' : 'OFF', tbx + tbw / 2, ary + rowH / 2);
 }
 
 function handleTuningClick(pos) {
@@ -654,7 +698,8 @@ function handleTuningClick(pos) {
   }
   if (!tuningOpen) return false;
   const { x, y, w, rowH, pad } = TUNE_PANEL;
-  const h = pad * 2 + TUNABLES.length * rowH;
+  const totalRows = TUNABLES.length + 1;
+  const h = pad * 2 + totalRows * rowH;
   if (inRect(pos, x, y, w, h)) {
     const bw = 24, bh = 20;
     for (let i = 0; i < TUNABLES.length; i++) {
@@ -670,6 +715,10 @@ function handleTuningClick(pos) {
         sendParams(); return true;
       }
     }
+    // Aim Line toggle
+    const ary = y + pad + TUNABLES.length * rowH;
+    const tbw = 52, tbh = 20, tbx = x + w - tbw - 8, tby = ary + (rowH - tbh) / 2;
+    if (inRect(pos, tbx, tby, tbw, tbh)) { showAimLine = !showAimLine; return true; }
     return true; // consumed by panel area
   }
   return false;
