@@ -575,7 +575,7 @@ function drawPlayer(p) {
   ctx.lineTo(aex - hl * Math.cos(p.angle + ha), aey - hl * Math.sin(p.angle + ha));
   ctx.stroke();
   // Dotted aimline to field border
-  if (showAimLine && p.occupied) {
+  if (showAimLine && p.occupied && p.state === ST_AIM) {
     const end = aimLineEnd(px, py, p.angle);
     if (end) {
       ctx.save();
