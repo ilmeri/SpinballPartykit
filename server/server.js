@@ -164,6 +164,8 @@ export default class Server {
     // Announcer tracking
     this.playerGoals = [0, 0, 0, 0];
     this.lastKickoffTime = 0;
+    this.lastAnnouncerEventTime = 0;
+    this.playTimer = 0;
   }
 
   get isQuickplay() {
@@ -186,6 +188,7 @@ export default class Server {
     this.winner = null;
     this.playerGoals = [0, 0, 0, 0];
     this.lastKickoffTime = Date.now();
+    this.playTimer = 0;
     for (let i = 0; i < 4; i++) {
       this.players[i].occupied = this.slots[i] !== null;
       this.players[i].shootMode = this.shootModes[i];
@@ -199,6 +202,14 @@ export default class Server {
     this.goalScoredBy = null;
     this.goalTimer = 0;
     this.lastKickoffTime = Date.now();
+    this.playTimer = 0;
+  }
+
+  canAnnounce(minGap = 8000) {
+    const now = Date.now();
+    if (now - this.lastAnnouncerEventTime < minGap) return false;
+    this.lastAnnouncerEventTime = now;
+    return true;
   }
 
   packState() {
@@ -284,18 +295,56 @@ export default class Server {
       return;
     }
 
+    // Save pre-physics state for announcer detection
+    const prevFbVx = this.fb.vx, prevFbVy = this.fb.vy;
+    const prevToucher = this.lastToucher;
+
     // Full authoritative physics
     for (const p of this.players) p.update(FDT);
     updateFb(this.fb);
     for (const p of this.players) wallBounce(p);
     wallBounce(this.fb);
     for (const p of this.players) postCol(p);
+    const fbVxPre = this.fb.vx, fbVyPre = this.fb.vy;
     postCol(this.fb);
+    const postHit = (this.fb.vx !== fbVxPre || this.fb.vy !== fbVyPre);
     for (let i = 0; i < this.players.length; i++)
       for (let j = i + 1; j < this.players.length; j++)
         circleCol(this.players[i], this.players[j], PMASS, PMASS);
     for (const p of this.players)
       if (circleCol(p, this.fb, PMASS, BMASS)) this.lastToucher = p;
+
+    // Announcer: save detection
+    if (this.lastToucher && this.lastToucher !== prevToucher) {
+      const saver = this.lastToucher;
+      const speed = Math.sqrt(prevFbVx * prevFbVx + prevFbVy * prevFbVy);
+      const toOwnGoal = (saver.team === 0 && prevFbVx < -2) || (saver.team === 1 && prevFbVx > 2);
+      if (toOwnGoal && speed > 4 && this.canAnnounce(10000)) {
+        this.broadcast({ type: 'event', event: 'save',
+          saver: this.names[saver.idx], saverTeam: saver.team,
+          scores: [...this.teamScores] });
+      }
+    }
+
+    // Announcer: near miss (post bounce near goal)
+    if (postHit && this.fb.y > GT && this.fb.y < GB) {
+      const speed = Math.sqrt(fbVxPre * fbVxPre + fbVyPre * fbVyPre);
+      const nearLeft = this.fb.x < FL + 15;
+      const nearRight = this.fb.x > FR - 15;
+      if ((nearLeft || nearRight) && speed > 3 && this.canAnnounce(10000)) {
+        this.broadcast({ type: 'event', event: 'nearMiss',
+          scores: [...this.teamScores] });
+      }
+    }
+
+    // Announcer: periodic color commentary
+    this.playTimer += FDT;
+    if (this.playTimer >= 25 && this.canAnnounce(20000)) {
+      this.playTimer = 0;
+      this.broadcast({ type: 'event', event: 'commentary',
+        scores: [...this.teamScores], names: [...this.names],
+        playerGoals: [...this.playerGoals] });
+    }
 
     // Check goals
     const scoringTeam = checkGoal(this.fb);
@@ -317,6 +366,8 @@ export default class Server {
         isMatchPoint: this.teamScores[scoringTeam] === WIN_SCORE - 1 && !this.winner,
         isGameOver: !!this.winner
       });
+      this.playTimer = 0;
+      this.lastAnnouncerEventTime = Date.now();
     }
 
     // Broadcast state at 20Hz

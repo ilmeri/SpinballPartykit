@@ -277,6 +277,27 @@ function buildAnnouncerPrompt(ev) {
       }
       break;
     }
+    case 'save': {
+      const who = ev.saver || teamNames[ev.saverTeam];
+      userMsg = `WHAT A SAVE by ${who}! The ball was heading straight for the ${teamNames[ev.saverTeam]} goal but ${who} got in the way just in time! Score: Blue ${ev.scores[0]} - ${ev.scores[1]} Red.`;
+      break;
+    }
+    case 'nearMiss': {
+      userMsg = `OFF THE POST! The ball smashes into the goalpost and bounces away! So close to a goal! Score: Blue ${ev.scores[0]} - ${ev.scores[1]} Red.`;
+      break;
+    }
+    case 'commentary': {
+      const activePlayers = ev.names ? ev.names.filter(Boolean) : [];
+      if (ev.scores[0] === ev.scores[1]) {
+        userMsg = `It's all square at ${ev.scores[0]}-${ev.scores[1]}! Give some dramatic mid-match color commentary about how tense this is.`;
+      } else {
+        const leading = ev.scores[0] > ev.scores[1] ? 'Blue' : 'Red';
+        const trailing = ev.scores[0] > ev.scores[1] ? 'Red' : 'Blue';
+        userMsg = `${leading} leads ${ev.scores[0]}-${ev.scores[1]}. Give dramatic mid-match color commentary. Can ${trailing} mount a comeback?`;
+      }
+      if (activePlayers.length > 0) userMsg += ` Players on the field: ${activePlayers.join(', ')}.`;
+      break;
+    }
     default: return null;
   }
   return userMsg;
