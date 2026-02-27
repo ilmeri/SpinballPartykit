@@ -613,7 +613,12 @@ function unpackState(buf) {
     smoothX += p.x - buf[o];
     smoothY += p.y - buf[o+1];
     p.x = buf[o]; p.y = buf[o+1]; p.vx = buf[o+2]; p.vy = buf[o+3];
-    p.angle = buf[o+4]; p.power = buf[o+5]; p.state = buf[o+6];
+    // Click-aim mode: client is authoritative for angle; during active aim also for state/power
+    if (myShootMode === 1) {
+      if (!aimPos) { p.power = buf[o+5]; p.state = buf[o+6]; }
+    } else {
+      p.angle = buf[o+4]; p.power = buf[o+5]; p.state = buf[o+6];
+    }
   }
 
   // Ball: snap with smoothing offset (local prediction corrected by server)
