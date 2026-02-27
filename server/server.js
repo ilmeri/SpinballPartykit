@@ -161,6 +161,9 @@ export default class Server {
     this.rematchVotes = new Set();
     this.shootModes = [0, 0, 0, 0];
     this.autoRematchTimer = 0;
+    // Announcer tracking
+    this.playerGoals = [0, 0, 0, 0];
+    this.lastKickoffTime = 0;
   }
 
   get isQuickplay() {
@@ -181,6 +184,8 @@ export default class Server {
     this.goalScoredBy = null;
     this.goalTimer = 0;
     this.winner = null;
+    this.playerGoals = [0, 0, 0, 0];
+    this.lastKickoffTime = Date.now();
     for (let i = 0; i < 4; i++) {
       this.players[i].occupied = this.slots[i] !== null;
       this.players[i].shootMode = this.shootModes[i];
@@ -193,6 +198,7 @@ export default class Server {
     this.lastToucher = null;
     this.goalScoredBy = null;
     this.goalTimer = 0;
+    this.lastKickoffTime = Date.now();
   }
 
   packState() {
@@ -254,6 +260,12 @@ export default class Server {
             winner: { team: this.winner.team, scorer },
             scores: [...this.teamScores]
           });
+          this.broadcast({ type: 'event', event: 'gameOver',
+            winnerTeam: this.winner.team,
+            scores: [...this.teamScores],
+            names: [...this.names],
+            playerGoals: [...this.playerGoals]
+          });
           this.gameState = 'GAME_OVER';
           if (this.isQuickplay) {
             this.autoRematchTimer = AUTO_REMATCH_DELAY;
@@ -291,9 +303,20 @@ export default class Server {
       this.teamScores[scoringTeam]++;
       this.goalScoredBy = { team: scoringTeam };
       this.goalTimer = GOAL_PAUSE;
+      const gScorerIdx = this.lastToucher ? this.lastToucher.idx : -1;
+      if (gScorerIdx >= 0) this.playerGoals[gScorerIdx]++;
+      const timeSinceKickoff = (Date.now() - this.lastKickoffTime) / 1000;
       if (this.teamScores[scoringTeam] >= WIN_SCORE) {
         this.winner = { team: scoringTeam };
       }
+      this.broadcast({ type: 'event', event: 'goal',
+        scorer: gScorerIdx >= 0 ? this.names[gScorerIdx] : '',
+        scorerTeam: scoringTeam,
+        scores: [...this.teamScores],
+        quickGoal: timeSinceKickoff < 4,
+        isMatchPoint: this.teamScores[scoringTeam] === WIN_SCORE - 1 && !this.winner,
+        isGameOver: !!this.winner
+      });
     }
 
     // Broadcast state at 20Hz
@@ -310,6 +333,8 @@ export default class Server {
     this.rematchVotes.clear();
     this.syncCounter = 0;
     this.broadcast({ type: 'start', slots: this.slots, names: this.names });
+    this.broadcast({ type: 'event', event: 'gameStart',
+      names: [...this.names], slots: [...this.slots] });
   }
 
   broadcast(msg) {
@@ -470,6 +495,12 @@ export default class Server {
         if (msg.ROT_SPD !== undefined) ROT_SPD = clamp(msg.ROT_SPD, 0.5, 8);
         if (msg.REST !== undefined) REST = clamp(msg.REST, 0.3, 1.2);
         this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST });
+        break;
+      }
+      case 'announce': {
+        if (msg.audio && msg.text) {
+          this.broadcast({ type: 'announce', audio: msg.audio, text: msg.text });
+        }
         break;
       }
     }

@@ -12,11 +12,52 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0f0f1a;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden}
 canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto;object-fit:contain;touch-action:none}
+#announcer-modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1a2e;border:2px solid #2a80ff;border-radius:12px;padding:20px;z-index:100;width:340px;color:#fff;font-family:sans-serif}
+#announcer-modal.open{display:block}
+#announcer-modal h3{margin:0 0 14px;font-size:16px;text-align:center;color:#5ca0f0}
+#announcer-modal label{display:block;font-size:12px;color:#888;margin:8px 0 3px}
+#announcer-modal input[type="text"],#announcer-modal input[type="password"]{width:100%;padding:6px 8px;background:#0f0f1a;border:1px solid #444;border-radius:4px;color:#fff;font-size:13px;outline:none}
+#announcer-modal input:focus{border-color:#2a80ff}
+#announcer-modal .ann-row{display:flex;align-items:center;justify-content:space-between;margin:10px 0}
+#announcer-modal .ann-row label{margin:0;flex:1}
+#announcer-modal .ann-toggle{width:40px;height:22px;background:#444;border-radius:11px;position:relative;cursor:pointer;flex-shrink:0}
+#announcer-modal .ann-toggle.on{background:#2a80ff}
+#announcer-modal .ann-toggle::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;background:#fff;border-radius:50%;transition:left .15s}
+#announcer-modal .ann-toggle.on::after{left:20px}
+#announcer-modal .ann-vol{display:flex;align-items:center;gap:8px;margin:10px 0}
+#announcer-modal .ann-vol input[type="range"]{flex:1;accent-color:#2a80ff}
+#announcer-modal .ann-btns{display:flex;gap:8px;margin-top:14px}
+#announcer-modal .ann-btns button{flex:1;padding:8px;border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer}
+#announcer-modal .ann-save{background:#2a80ff;color:#fff}
+#announcer-modal .ann-cancel{background:#333;color:#aaa}
+#announcer-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <input id="nameInput" type="text" maxlength="10" autocomplete="off" style="position:fixed;top:50%;left:50%;width:1px;height:1px;border:none;outline:none;opacity:0;font-size:16px">
+<div id="announcer-overlay" onclick="document.getElementById('announcer-modal').classList.remove('open');this.style.display='none'"></div>
+<div id="announcer-modal">
+  <h3>AI Announcer</h3>
+  <label>OpenAI API Key</label>
+  <input type="password" id="ann-openai" placeholder="sk-...">
+  <label>ElevenLabs API Key</label>
+  <input type="password" id="ann-eleven" placeholder="xi-...">
+  <label>ElevenLabs Voice ID</label>
+  <input type="text" id="ann-voice" placeholder="JBFqnCBsd6RMkjVDRZzb">
+  <div class="ann-row">
+    <label>Enable Announcer</label>
+    <div class="ann-toggle" id="ann-toggle"></div>
+  </div>
+  <div class="ann-vol">
+    <label style="flex:none;margin:0">Volume</label>
+    <input type="range" id="ann-volume" min="0" max="1" step="0.05" value="0.8">
+  </div>
+  <div class="ann-btns">
+    <button class="ann-cancel" id="ann-cancel">Cancel</button>
+    <button class="ann-save" id="ann-save">Save</button>
+  </div>
+</div>
 <script type="module">
 import PartySocket from 'https://esm.sh/partysocket';
 
@@ -140,6 +181,261 @@ function setParam(k, v) {
 }
 function sendParams() {
   if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST }));
+}
+
+// ===== Announcer =====
+let announcerEnabled = false;
+let announcerKeys = { openai: '', elevenlabs: '', voiceId: 'JBFqnCBsd6RMkjVDRZzb' };
+let announcerQueue = [];
+let announcerBusy = false;
+let announcerVolume = 0.8;
+let subtitleText = '';
+let subtitleTimer = 0;
+let currentAnnounceAudio = null;
+
+// Load announcer config from localStorage
+try {
+  const saved = JSON.parse(localStorage.getItem('faceballs-announcer') || '{}');
+  if (saved.openai) announcerKeys.openai = saved.openai;
+  if (saved.elevenlabs) announcerKeys.elevenlabs = saved.elevenlabs;
+  if (saved.voiceId) announcerKeys.voiceId = saved.voiceId;
+  if (saved.enabled !== undefined) announcerEnabled = saved.enabled;
+  if (saved.volume !== undefined) announcerVolume = saved.volume;
+} catch {}
+
+function isAnnouncerHost() {
+  return announcerEnabled && announcerKeys.openai && announcerKeys.elevenlabs;
+}
+
+// Announcer modal UI
+const annModal = document.getElementById('announcer-modal');
+const annOverlay = document.getElementById('announcer-overlay');
+const annToggle = document.getElementById('ann-toggle');
+const annOpenai = document.getElementById('ann-openai');
+const annEleven = document.getElementById('ann-eleven');
+const annVoice = document.getElementById('ann-voice');
+const annVolumeEl = document.getElementById('ann-volume');
+
+function openAnnouncerModal() {
+  annOpenai.value = announcerKeys.openai;
+  annEleven.value = announcerKeys.elevenlabs;
+  annVoice.value = announcerKeys.voiceId;
+  annVolumeEl.value = announcerVolume;
+  annToggle.classList.toggle('on', announcerEnabled);
+  annModal.classList.add('open');
+  annOverlay.style.display = 'block';
+}
+
+function closeAnnouncerModal() {
+  annModal.classList.remove('open');
+  annOverlay.style.display = 'none';
+}
+
+annToggle.addEventListener('click', () => annToggle.classList.toggle('on'));
+document.getElementById('ann-cancel').addEventListener('click', closeAnnouncerModal);
+document.getElementById('ann-save').addEventListener('click', () => {
+  announcerKeys.openai = annOpenai.value.trim();
+  announcerKeys.elevenlabs = annEleven.value.trim();
+  announcerKeys.voiceId = annVoice.value.trim() || 'JBFqnCBsd6RMkjVDRZzb';
+  announcerEnabled = annToggle.classList.contains('on');
+  announcerVolume = parseFloat(annVolumeEl.value);
+  localStorage.setItem('faceballs-announcer', JSON.stringify({
+    openai: announcerKeys.openai, elevenlabs: announcerKeys.elevenlabs,
+    voiceId: announcerKeys.voiceId, enabled: announcerEnabled, volume: announcerVolume
+  }));
+  closeAnnouncerModal();
+});
+
+// Stop modal key events from reaching game
+annModal.addEventListener('keydown', e => e.stopPropagation());
+annModal.addEventListener('keyup', e => e.stopPropagation());
+
+// Build LLM prompt for an event
+function buildAnnouncerPrompt(ev) {
+  const teamNames = ['Blue', 'Red'];
+  let userMsg = '';
+  switch (ev.event) {
+    case 'gameStart': {
+      const blue = [ev.names[0], ev.names[1]].filter(Boolean).join(' & ') || 'Blue team';
+      const red = [ev.names[2], ev.names[3]].filter(Boolean).join(' & ') || 'Red team';
+      userMsg = `New game starting! Blue team: ${blue}. Red team: ${red}. First to 5 wins.`;
+      break;
+    }
+    case 'goal': {
+      const who = ev.scorer || teamNames[ev.scorerTeam];
+      userMsg = `GOAL! ${who} scores for ${teamNames[ev.scorerTeam]}! Score is now Blue ${ev.scores[0]} - ${ev.scores[1]} Red.`;
+      if (ev.quickGoal) userMsg += ' This was a lightning-fast goal, barely seconds after kickoff!';
+      if (ev.isMatchPoint) userMsg += ` ${teamNames[ev.scorerTeam]} is now just ONE goal away from winning!`;
+      if (ev.isGameOver) userMsg += ' This is the WINNING GOAL! Game over!';
+      break;
+    }
+    case 'gameOver': {
+      userMsg = `GAME OVER! ${teamNames[ev.winnerTeam]} team wins! Final score: Blue ${ev.scores[0]} - ${ev.scores[1]} Red.`;
+      const mvp = ev.playerGoals ? ev.playerGoals.indexOf(Math.max(...ev.playerGoals)) : -1;
+      if (mvp >= 0 && ev.names[mvp] && ev.playerGoals[mvp] > 0) {
+        userMsg += ` MVP: ${ev.names[mvp]} with ${ev.playerGoals[mvp]} goals!`;
+      }
+      break;
+    }
+    default: return null;
+  }
+  return userMsg;
+}
+
+async function generateAnnouncement(ev) {
+  const userMsg = buildAnnouncerPrompt(ev);
+  if (!userMsg) return;
+
+  try {
+    // Call OpenAI
+    const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + announcerKeys.openai },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        temperature: 1.0,
+        max_tokens: 80,
+        messages: [
+          { role: 'system', content: 'You are an over-the-top, hilarious sports announcer for Faceballs — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Be dramatic, funny, and occasionally absurd. Reference player names when available. Never use hashtags or emojis.' },
+          { role: 'user', content: userMsg }
+        ]
+      })
+    });
+    if (!chatRes.ok) { console.warn('Announcer OpenAI error:', chatRes.status); return; }
+    const chatData = await chatRes.json();
+    const text = chatData.choices?.[0]?.message?.content?.trim();
+    if (!text) return;
+
+    // Call ElevenLabs TTS
+    const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${announcerKeys.voiceId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'xi-api-key': announcerKeys.elevenlabs },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_turbo_v2_5',
+        voice_settings: { stability: 0.4, similarity_boost: 0.8 }
+      })
+    });
+    if (!ttsRes.ok) { console.warn('Announcer ElevenLabs error:', ttsRes.status); return; }
+    const audioBlob = await ttsRes.blob();
+    const reader = new FileReader();
+    const base64 = await new Promise(resolve => {
+      reader.onloadend = () => resolve(reader.result.split(',')[1]);
+      reader.readAsDataURL(audioBlob);
+    });
+
+    // Send to server for relay to all clients
+    if (ws) ws.send(JSON.stringify({ type: 'announce', audio: base64, text }));
+  } catch (err) {
+    console.warn('Announcer error:', err);
+  }
+}
+
+async function processAnnouncerQueue() {
+  if (announcerBusy) return;
+  if (announcerQueue.length === 0) return;
+  // Drop stale events (keep max 2)
+  while (announcerQueue.length > 2) announcerQueue.shift();
+  const ev = announcerQueue.shift();
+  announcerBusy = true;
+  try {
+    await generateAnnouncement(ev);
+  } finally {
+    announcerBusy = false;
+    if (announcerQueue.length > 0) processAnnouncerQueue();
+  }
+}
+
+function handleAnnouncerEvent(ev) {
+  if (!isAnnouncerHost()) return;
+  announcerQueue.push(ev);
+  processAnnouncerQueue();
+}
+
+function playAnnouncement(audio64, text) {
+  // Stop any currently playing announcement
+  if (currentAnnounceAudio) {
+    currentAnnounceAudio.pause();
+    currentAnnounceAudio = null;
+  }
+  const audio = new Audio('data:audio/mpeg;base64,' + audio64);
+  audio.volume = announcerVolume;
+  currentAnnounceAudio = audio;
+  subtitleText = text;
+  subtitleTimer = 10; // will be overridden by audio end
+  audio.play().catch(() => {});
+  audio.addEventListener('ended', () => {
+    currentAnnounceAudio = null;
+    // Keep subtitle for 1.5s after audio ends
+    subtitleTimer = 1.5;
+  });
+  audio.addEventListener('error', () => {
+    currentAnnounceAudio = null;
+    subtitleTimer = 3;
+  });
+}
+
+// Announcer button position (next to tuning gear)
+const ANN_BTN = { x: W - 70, y: 8, w: 28, h: 24 };
+
+function drawAnnouncerButton() {
+  if (gameState !== 'PLAYING' && gameState !== 'GAME_OVER') return;
+  const { x, y, w, h } = ANN_BTN;
+  ctx.fillStyle = isAnnouncerHost() ? '#2a80ff' : 'rgba(255,255,255,0.1)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = isAnnouncerHost() ? '#5ca0f0' : '#555';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, w, h);
+  // Mic icon (simple drawn shape)
+  ctx.fillStyle = isAnnouncerHost() ? '#fff' : '#888';
+  ctx.font = '15px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('AI', x + w / 2, y + h / 2);
+}
+
+function handleAnnouncerButtonClick(pos) {
+  if (gameState !== 'PLAYING' && gameState !== 'GAME_OVER') return false;
+  if (inRect(pos, ANN_BTN.x, ANN_BTN.y, ANN_BTN.w, ANN_BTN.h)) {
+    openAnnouncerModal();
+    return true;
+  }
+  return false;
+}
+
+function drawSubtitle() {
+  if (!subtitleText || subtitleTimer <= 0) return;
+  const barH = 50;
+  const barY = H - barH;
+  const alpha = Math.min(subtitleTimer, 1);
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.75;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, barY, W, barH);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // Wrap text if too long
+  const maxW = W - 40;
+  const words = subtitleText.split(' ');
+  let lines = [], line = '';
+  for (const word of words) {
+    const test = line ? line + ' ' + word : word;
+    if (ctx.measureText(test).width > maxW) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length > 2) lines = lines.slice(0, 2);
+  const lineH = 20;
+  const startY = barY + barH / 2 - (lines.length - 1) * lineH / 2;
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], W / 2, startY + i * lineH);
+  }
+  ctx.restore();
 }
 
 // ===== Player =====
@@ -903,6 +1199,12 @@ function joinNetRoom(roomId) {
         if (msg.ROT_SPD !== undefined) ROT_SPD = msg.ROT_SPD;
         if (msg.REST !== undefined) REST = msg.REST;
         break;
+      case 'event':
+        handleAnnouncerEvent(msg);
+        break;
+      case 'announce':
+        if (msg.audio && msg.text) playAnnouncement(msg.audio, msg.text);
+        break;
     }
   };
 
@@ -1095,6 +1397,7 @@ window.addEventListener('keyup', e => {
 // Mouse — canvas handles UI clicks + game input
 cvs.addEventListener('mousedown', e => {
   const pos = canvasPos(e);
+  if (handleAnnouncerButtonClick(pos)) return;
   if (gameState === 'PLAYING' && handleTuningClick(pos)) return;
   if (gameState === 'PLAYING' && handleModeButtonClick(pos)) return;
   const result = handleClick(pos);
@@ -1118,6 +1421,7 @@ cvs.addEventListener('mouseup', () => {
 cvs.addEventListener('touchstart', e => {
   e.preventDefault();
   const pos = canvasPos(e);
+  if (handleAnnouncerButtonClick(pos)) return;
   if (gameState === 'PLAYING' && handleTuningClick(pos)) return;
   if (gameState === 'PLAYING' && handleModeButtonClick(pos)) return;
   const result = handleClick(pos);
@@ -1185,6 +1489,8 @@ const FDT = 1 / 60;
 let acc = 0, lt = 0;
 
 function fixedUpdate() {
+  // Subtitle timer always ticks
+  if (subtitleTimer > 0) { subtitleTimer -= FDT; if (subtitleTimer <= 0) { subtitleText = ''; subtitleTimer = 0; } }
   if (gameState !== 'PLAYING') return;
   if (goalScoredBy) return; // Server handles goal timer; client just freezes
 
@@ -1232,15 +1538,17 @@ function renderGame() {
   for (const p of players) drawPlayer(p);
   drawScoreboard();
   drawModeButtons();
+  drawAnnouncerButton();
   drawTuningPanel();
   if (goalScoredBy && !winner) drawGoalCelebration();
+  drawSubtitle();
 }
 
 function render() {
   if (gameState === 'MENU') drawMenuScreen();
   else if (gameState === 'WAITING') drawWaitingScreen();
   else if (gameState === 'PLAYING') renderGame();
-  else if (gameState === 'GAME_OVER') { renderGame(); drawGameOverOverlay(); }
+  else if (gameState === 'GAME_OVER') { renderGame(); drawGameOverOverlay(); drawSubtitle(); }
 }
 
 // ===== Game Loop =====
