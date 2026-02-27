@@ -1,0 +1,11 @@
+{
+  "name": "faceballs-server",
+  "private": true,
+  "scripts": {
+    "dev": "partykit dev",
+    "deploy": "partykit deploy"
+  },
+  "dependencies": {
+    "partykit": "latest"
+  }
+}

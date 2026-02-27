@@ -1,0 +1,5 @@
+{
+  "name": "faceballs",
+  "main": "server.js",
+  "port": 1999
+}
