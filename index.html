@@ -16,8 +16,9 @@ canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto;obj
 #announcer-modal.open{display:block}
 #announcer-modal h3{margin:0 0 14px;font-size:16px;text-align:center;color:#5ca0f0}
 #announcer-modal label{display:block;font-size:12px;color:#888;margin:8px 0 3px}
-#announcer-modal input[type="text"],#announcer-modal input[type="password"]{width:100%;padding:6px 8px;background:#0f0f1a;border:1px solid #444;border-radius:4px;color:#fff;font-size:13px;outline:none}
-#announcer-modal input:focus{border-color:#2a80ff}
+#announcer-modal input[type="text"],#announcer-modal input[type="password"],#announcer-modal select{width:100%;padding:6px 8px;background:#0f0f1a;border:1px solid #444;border-radius:4px;color:#fff;font-size:13px;outline:none}
+#announcer-modal input:focus,#announcer-modal select:focus{border-color:#2a80ff}
+#announcer-modal .ann-provider-fields{margin-top:4px}
 #announcer-modal .ann-row{display:flex;align-items:center;justify-content:space-between;margin:10px 0}
 #announcer-modal .ann-row label{margin:0;flex:1}
 #announcer-modal .ann-toggle{width:40px;height:22px;background:#444;border-radius:11px;position:relative;cursor:pointer;flex-shrink:0}
@@ -41,10 +42,21 @@ canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto;obj
   <h3>AI Announcer</h3>
   <label>OpenAI API Key</label>
   <input type="password" id="ann-openai" placeholder="sk-...">
-  <label>ElevenLabs API Key</label>
-  <input type="password" id="ann-eleven" placeholder="xi-...">
-  <label>ElevenLabs Voice ID</label>
-  <input type="text" id="ann-voice" placeholder="JBFqnCBsd6RMkjVDRZzb">
+  <label>TTS Provider</label>
+  <select id="ann-provider">
+    <option value="elevenlabs">ElevenLabs</option>
+    <option value="hume">Hume AI (Octave)</option>
+  </select>
+  <div class="ann-provider-fields" id="ann-fields-eleven">
+    <label>ElevenLabs API Key</label>
+    <input type="password" id="ann-eleven" placeholder="xi-...">
+    <label>ElevenLabs Voice ID</label>
+    <input type="text" id="ann-voice" placeholder="JBFqnCBsd6RMkjVDRZzb">
+  </div>
+  <div class="ann-provider-fields" id="ann-fields-hume" style="display:none">
+    <label>Hume API Key</label>
+    <input type="password" id="ann-hume" placeholder="...">
+  </div>
   <div class="ann-row">
     <label>Enable Announcer</label>
     <div class="ann-toggle" id="ann-toggle"></div>
@@ -185,7 +197,7 @@ function sendParams() {
 
 // ===== Announcer =====
 let announcerEnabled = false;
-let announcerKeys = { openai: '', elevenlabs: '', voiceId: 'JBFqnCBsd6RMkjVDRZzb' };
+let announcerKeys = { openai: '', elevenlabs: '', voiceId: 'JBFqnCBsd6RMkjVDRZzb', hume: '', ttsProvider: 'elevenlabs' };
 let announcerQueue = [];
 let announcerBusy = false;
 let announcerVolume = 0.8;
@@ -199,12 +211,16 @@ try {
   if (saved.openai) announcerKeys.openai = saved.openai;
   if (saved.elevenlabs) announcerKeys.elevenlabs = saved.elevenlabs;
   if (saved.voiceId) announcerKeys.voiceId = saved.voiceId;
+  if (saved.hume) announcerKeys.hume = saved.hume;
+  if (saved.ttsProvider) announcerKeys.ttsProvider = saved.ttsProvider;
   if (saved.enabled !== undefined) announcerEnabled = saved.enabled;
   if (saved.volume !== undefined) announcerVolume = saved.volume;
 } catch {}
 
 function isAnnouncerHost() {
-  return announcerEnabled && announcerKeys.openai && announcerKeys.elevenlabs;
+  if (!announcerEnabled || !announcerKeys.openai) return false;
+  if (announcerKeys.ttsProvider === 'hume') return !!announcerKeys.hume;
+  return !!announcerKeys.elevenlabs;
 }
 
 // Announcer modal UI
@@ -214,14 +230,28 @@ const annToggle = document.getElementById('ann-toggle');
 const annOpenai = document.getElementById('ann-openai');
 const annEleven = document.getElementById('ann-eleven');
 const annVoice = document.getElementById('ann-voice');
+const annHume = document.getElementById('ann-hume');
+const annProvider = document.getElementById('ann-provider');
 const annVolumeEl = document.getElementById('ann-volume');
+const annFieldsEleven = document.getElementById('ann-fields-eleven');
+const annFieldsHume = document.getElementById('ann-fields-hume');
+
+function updateProviderFields() {
+  const isHume = annProvider.value === 'hume';
+  annFieldsEleven.style.display = isHume ? 'none' : 'block';
+  annFieldsHume.style.display = isHume ? 'block' : 'none';
+}
+annProvider.addEventListener('change', updateProviderFields);
 
 function openAnnouncerModal() {
   annOpenai.value = announcerKeys.openai;
   annEleven.value = announcerKeys.elevenlabs;
   annVoice.value = announcerKeys.voiceId;
+  annHume.value = announcerKeys.hume;
+  annProvider.value = announcerKeys.ttsProvider;
   annVolumeEl.value = announcerVolume;
   annToggle.classList.toggle('on', announcerEnabled);
+  updateProviderFields();
   annModal.classList.add('open');
   annOverlay.style.display = 'block';
 }
@@ -237,11 +267,14 @@ document.getElementById('ann-save').addEventListener('click', () => {
   announcerKeys.openai = annOpenai.value.trim();
   announcerKeys.elevenlabs = annEleven.value.trim();
   announcerKeys.voiceId = annVoice.value.trim() || 'JBFqnCBsd6RMkjVDRZzb';
+  announcerKeys.hume = annHume.value.trim();
+  announcerKeys.ttsProvider = annProvider.value;
   announcerEnabled = annToggle.classList.contains('on');
   announcerVolume = parseFloat(annVolumeEl.value);
   localStorage.setItem('faceballs-announcer', JSON.stringify({
     openai: announcerKeys.openai, elevenlabs: announcerKeys.elevenlabs,
-    voiceId: announcerKeys.voiceId, enabled: announcerEnabled, volume: announcerVolume
+    voiceId: announcerKeys.voiceId, hume: announcerKeys.hume,
+    ttsProvider: announcerKeys.ttsProvider, enabled: announcerEnabled, volume: announcerVolume
   }));
   closeAnnouncerModal();
 });
@@ -303,12 +336,32 @@ function buildAnnouncerPrompt(ev) {
   return userMsg;
 }
 
+function getHumeActing(event) {
+  switch (event) {
+    case 'goal': return 'screaming with excitement, over-the-top sports announcer, barely able to contain yourself';
+    case 'save': return 'shocked and amazed, gasping, disbelief';
+    case 'nearMiss': return 'dramatic tension, sharp intake of breath, on the edge of your seat';
+    case 'gameStart': return 'hyped up, energetic, welcoming a roaring crowd';
+    case 'gameOver': return 'dramatic finale, epic conclusion, building to a crescendo';
+    case 'commentary': return 'smooth confident broadcaster, classic sports commentator';
+    default: return 'enthusiastic sports announcer';
+  }
+}
+
+async function blobToBase64(blob) {
+  const reader = new FileReader();
+  return new Promise(resolve => {
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function generateAnnouncement(ev) {
   const userMsg = buildAnnouncerPrompt(ev);
   if (!userMsg) return;
 
   try {
-    // Call OpenAI
+    // Call OpenAI for commentary text
     const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + announcerKeys.openai },
@@ -327,23 +380,36 @@ async function generateAnnouncement(ev) {
     const text = chatData.choices?.[0]?.message?.content?.trim();
     if (!text) return;
 
-    // Call ElevenLabs TTS
-    const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${announcerKeys.voiceId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'xi-api-key': announcerKeys.elevenlabs },
-      body: JSON.stringify({
-        text,
-        model_id: 'eleven_turbo_v2_5',
-        voice_settings: { stability: 0.4, similarity_boost: 0.8 }
-      })
-    });
-    if (!ttsRes.ok) { console.warn('Announcer ElevenLabs error:', ttsRes.status); return; }
-    const audioBlob = await ttsRes.blob();
-    const reader = new FileReader();
-    const base64 = await new Promise(resolve => {
-      reader.onloadend = () => resolve(reader.result.split(',')[1]);
-      reader.readAsDataURL(audioBlob);
-    });
+    // Call TTS provider
+    let base64;
+    if (announcerKeys.ttsProvider === 'hume') {
+      const ttsRes = await fetch('https://api.hume.ai/v0/tts/file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Hume-Api-Key': announcerKeys.hume },
+        body: JSON.stringify({
+          utterances: [{
+            text,
+            description: getHumeActing(ev.event),
+            speed: ev.event === 'goal' ? 1.2 : 1.0
+          }],
+          format: { type: 'mp3' }
+        })
+      });
+      if (!ttsRes.ok) { console.warn('Announcer Hume error:', ttsRes.status); return; }
+      base64 = await blobToBase64(await ttsRes.blob());
+    } else {
+      const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${announcerKeys.voiceId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'xi-api-key': announcerKeys.elevenlabs },
+        body: JSON.stringify({
+          text,
+          model_id: 'eleven_turbo_v2_5',
+          voice_settings: { stability: 0.4, similarity_boost: 0.8 }
+        })
+      });
+      if (!ttsRes.ok) { console.warn('Announcer ElevenLabs error:', ttsRes.status); return; }
+      base64 = await blobToBase64(await ttsRes.blob());
+    }
 
     // Send to server for relay to all clients
     if (ws) ws.send(JSON.stringify({ type: 'announce', audio: base64, text }));
