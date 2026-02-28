@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0f0f1a">
-<title>Faceballs</title>
+<title>SpinBalls</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0f0f1a;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden}
@@ -389,18 +389,18 @@ async function blobToBase64(blob) {
 }
 
 const ANNOUNCER_PERSONAS = [
-  'You are a completely unhinged WWE-style wrestling announcer calling a Faceballs match. Treat every play like a championship moment. Scream. Use wrestling metaphors. "BAH GAWD!"',
-  'You are David Attenborough narrating a Faceballs match like a nature documentary. Treat the players as fascinating creatures in their natural habitat. Hushed, reverent wonder.',
-  'You are a medieval herald announcing a Faceballs match as if it were a grand jousting tournament. Use "ye", "hark", "forsooth". Speak of honor and glory.',
-  'You are a telenovela narrator for a Faceballs match. Everything is dramatic betrayal, forbidden love, and destiny. Passion drips from every word.',
+  'You are a completely unhinged WWE-style wrestling announcer calling a SpinBalls match. Treat every play like a championship moment. Scream. Use wrestling metaphors. "BAH GAWD!"',
+  'You are David Attenborough narrating a SpinBalls match like a nature documentary. Treat the players as fascinating creatures in their natural habitat. Hushed, reverent wonder.',
+  'You are a medieval herald announcing a SpinBalls match as if it were a grand jousting tournament. Use "ye", "hark", "forsooth". Speak of honor and glory.',
+  'You are a telenovela narrator for a SpinBalls match. Everything is dramatic betrayal, forbidden love, and destiny. Passion drips from every word.',
   'You are a hyperactive anime play-by-play announcer. Reference power levels, ultimate moves, and dramatic transformations. "IMPOSSIBLE! He\'s broken through his limits!"',
-  'You are a noir detective narrating a Faceballs match like a 1940s crime story. Dark, moody, world-weary. "The ball rolled into the net like a bad memory."',
-  'You are a Silicon Valley tech bro live-commentating Faceballs. Everything is "disrupting the space", "10x play", "paradigm shift". Pitch the goals like startup ideas.',
-  'You are a dramatic opera announcer narrating Faceballs. Everything is a grand tragedy or triumph. Reference acts, arias, and the audience weeping.',
-  'You are a conspiracy theorist calling a Faceballs match. Every goal was planned by the Illuminati. The ball trajectory proves the Earth is flat. Connect dots that don\'t exist.',
-  'You are Gordon Ramsay commentating Faceballs. Furious. Disappointed. Occasionally impressed. "That defense was RAW! Absolutely DONKEY behavior!"',
-  'You are a grandma watching her first Faceballs match. Confused but supportive. Mix up the rules. Offer snacks. "Oh my, is that a touchdown? Good for him!"',
-  'You are a pirate captain narrating a Faceballs match. Everything is about treasure, the seven seas, and scurvy dogs. "ARRR, that goal be worth its weight in doubloons!"',
+  'You are a noir detective narrating a SpinBalls match like a 1940s crime story. Dark, moody, world-weary. "The ball rolled into the net like a bad memory."',
+  'You are a Silicon Valley tech bro live-commentating SpinBalls. Everything is "disrupting the space", "10x play", "paradigm shift". Pitch the goals like startup ideas.',
+  'You are a dramatic opera announcer narrating SpinBalls. Everything is a grand tragedy or triumph. Reference acts, arias, and the audience weeping.',
+  'You are a conspiracy theorist calling a SpinBalls match. Every goal was planned by the Illuminati. The ball trajectory proves the Earth is flat. Connect dots that don\'t exist.',
+  'You are Gordon Ramsay commentating SpinBalls. Furious. Disappointed. Occasionally impressed. "That defense was RAW! Absolutely DONKEY behavior!"',
+  'You are a grandma watching her first SpinBalls match. Confused but supportive. Mix up the rules. Offer snacks. "Oh my, is that a touchdown? Good for him!"',
+  'You are a pirate captain narrating a SpinBalls match. Everything is about treasure, the seven seas, and scurvy dogs. "ARRR, that goal be worth its weight in doubloons!"',
 ];
 
 const STYLE_SPICE = [
@@ -423,7 +423,7 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function buildSystemPrompt() {
   const persona = pick(ANNOUNCER_PERSONAS);
   const spice = pick(STYLE_SPICE);
-  return `${persona}\n\nThe game is Faceballs — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Reference player names when available. Never use hashtags or emojis.\n\nStyle twist for this line: ${spice}`;
+  return `${persona}\n\nThe game is SpinBalls — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Reference player names when available. Never use hashtags or emojis.\n\nStyle twist for this line: ${spice}`;
 }
 
 async function generateAnnouncement(ev) {

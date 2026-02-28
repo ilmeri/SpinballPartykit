@@ -1,4 +1,4 @@
-// server.js — PartyKit game server for Faceballs
+// server.js — PartyKit game server for SpinBalls
 // Physics and game logic ported from index.html
 
 // ===== Physics Constants (tunable at runtime) =====
