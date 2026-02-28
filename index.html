@@ -95,7 +95,7 @@ let FRIC = 0.982, REST = 0.78;
 const MIN_V = 0.15;
 let MAX_POW = 16, POW_RATE = 20;
 let ROT_SPD = 2.8;
-const PR = 18, BR = 12;
+let PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
 
@@ -182,17 +182,22 @@ const TUNABLES = [
   { key: 'FRIC',     label: 'Friction', min: 0.95, max: 0.999, step: 0.003, dp: 3 },
   { key: 'ROT_SPD',  label: 'Rotation', min: 0.5,  max: 8,     step: 0.3,   dp: 1 },
   { key: 'REST',     label: 'Bounce',   min: 0.3,  max: 1.2,   step: 0.05,  dp: 2 },
+  { key: 'PR',       label: 'Player Size', min: 8, max: 36,    step: 2,     dp: 0 },
+  { key: 'BR',       label: 'Ball Size',   min: 6, max: 24,    step: 2,     dp: 0 },
 ];
 function getParam(k) {
   if (k === 'MAX_POW') return MAX_POW; if (k === 'POW_RATE') return POW_RATE;
   if (k === 'FRIC') return FRIC; if (k === 'ROT_SPD') return ROT_SPD; if (k === 'REST') return REST;
+  if (k === 'PR') return PR; if (k === 'BR') return BR;
 }
 function setParam(k, v) {
   if (k === 'MAX_POW') MAX_POW = v; else if (k === 'POW_RATE') POW_RATE = v;
   else if (k === 'FRIC') FRIC = v; else if (k === 'ROT_SPD') ROT_SPD = v; else if (k === 'REST') REST = v;
+  else if (k === 'PR') { PR = v; players.forEach(p => p.r = PR); }
+  else if (k === 'BR') { BR = v; if (fb) fb.r = BR; }
 }
 function sendParams() {
-  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST }));
+  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR }));
 }
 
 // ===== Announcer =====
@@ -1350,6 +1355,8 @@ function joinNetRoom(roomId) {
         if (msg.FRIC !== undefined) FRIC = msg.FRIC;
         if (msg.ROT_SPD !== undefined) ROT_SPD = msg.ROT_SPD;
         if (msg.REST !== undefined) REST = msg.REST;
+        if (msg.PR !== undefined) { PR = msg.PR; players.forEach(p => p.r = PR); }
+        if (msg.BR !== undefined) { BR = msg.BR; if (fb) fb.r = BR; }
         break;
       case 'event':
         handleAnnouncerEvent(msg);

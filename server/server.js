@@ -6,7 +6,7 @@ let FRIC = 0.982, REST = 0.78;
 const MIN_V = 0.15;
 let MAX_POW = 16, POW_RATE = 20;
 let ROT_SPD = 2.8;
-const PR = 18, BR = 12;
+let PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
 
@@ -545,7 +545,9 @@ export default class Server {
         if (msg.FRIC !== undefined) FRIC = clamp(msg.FRIC, 0.95, 0.999);
         if (msg.ROT_SPD !== undefined) ROT_SPD = clamp(msg.ROT_SPD, 0.5, 8);
         if (msg.REST !== undefined) REST = clamp(msg.REST, 0.3, 1.2);
-        this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST });
+        if (msg.PR !== undefined) { PR = clamp(msg.PR, 8, 36); this.players.forEach(p => p.r = PR); }
+        if (msg.BR !== undefined) { BR = clamp(msg.BR, 6, 24); if (this.fb) this.fb.r = BR; }
+        this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR });
         break;
       }
       case 'announce': {
