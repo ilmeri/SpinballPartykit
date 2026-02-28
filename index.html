@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0f0f1a">
-<title>Faceballs</title>
+<title>SpinBalls</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0f0f1a;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden}
@@ -95,7 +95,7 @@ let FRIC = 0.982, REST = 0.78;
 const MIN_V = 0.15;
 let MAX_POW = 16, POW_RATE = 20;
 let ROT_SPD = 2.8;
-const PR = 18, BR = 12;
+let PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
 
@@ -182,17 +182,22 @@ const TUNABLES = [
   { key: 'FRIC',     label: 'Friction', min: 0.95, max: 0.999, step: 0.003, dp: 3 },
   { key: 'ROT_SPD',  label: 'Rotation', min: 0.5,  max: 8,     step: 0.3,   dp: 1 },
   { key: 'REST',     label: 'Bounce',   min: 0.3,  max: 1.2,   step: 0.05,  dp: 2 },
+  { key: 'PR',       label: 'Player Size', min: 8, max: 36,    step: 2,     dp: 0 },
+  { key: 'BR',       label: 'Ball Size',   min: 6, max: 24,    step: 2,     dp: 0 },
 ];
 function getParam(k) {
   if (k === 'MAX_POW') return MAX_POW; if (k === 'POW_RATE') return POW_RATE;
   if (k === 'FRIC') return FRIC; if (k === 'ROT_SPD') return ROT_SPD; if (k === 'REST') return REST;
+  if (k === 'PR') return PR; if (k === 'BR') return BR;
 }
 function setParam(k, v) {
   if (k === 'MAX_POW') MAX_POW = v; else if (k === 'POW_RATE') POW_RATE = v;
   else if (k === 'FRIC') FRIC = v; else if (k === 'ROT_SPD') ROT_SPD = v; else if (k === 'REST') REST = v;
+  else if (k === 'PR') { PR = v; players.forEach(p => p.r = PR); }
+  else if (k === 'BR') { BR = v; if (fb) fb.r = BR; }
 }
 function sendParams() {
-  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST }));
+  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR }));
 }
 
 // ===== Announcer =====
@@ -384,18 +389,18 @@ async function blobToBase64(blob) {
 }
 
 const ANNOUNCER_PERSONAS = [
-  'You are a completely unhinged WWE-style wrestling announcer calling a Faceballs match. Treat every play like a championship moment. Scream. Use wrestling metaphors. "BAH GAWD!"',
-  'You are David Attenborough narrating a Faceballs match like a nature documentary. Treat the players as fascinating creatures in their natural habitat. Hushed, reverent wonder.',
-  'You are a medieval herald announcing a Faceballs match as if it were a grand jousting tournament. Use "ye", "hark", "forsooth". Speak of honor and glory.',
-  'You are a telenovela narrator for a Faceballs match. Everything is dramatic betrayal, forbidden love, and destiny. Passion drips from every word.',
+  'You are a completely unhinged WWE-style wrestling announcer calling a SpinBalls match. Treat every play like a championship moment. Scream. Use wrestling metaphors. "BAH GAWD!"',
+  'You are David Attenborough narrating a SpinBalls match like a nature documentary. Treat the players as fascinating creatures in their natural habitat. Hushed, reverent wonder.',
+  'You are a medieval herald announcing a SpinBalls match as if it were a grand jousting tournament. Use "ye", "hark", "forsooth". Speak of honor and glory.',
+  'You are a telenovela narrator for a SpinBalls match. Everything is dramatic betrayal, forbidden love, and destiny. Passion drips from every word.',
   'You are a hyperactive anime play-by-play announcer. Reference power levels, ultimate moves, and dramatic transformations. "IMPOSSIBLE! He\'s broken through his limits!"',
-  'You are a noir detective narrating a Faceballs match like a 1940s crime story. Dark, moody, world-weary. "The ball rolled into the net like a bad memory."',
-  'You are a Silicon Valley tech bro live-commentating Faceballs. Everything is "disrupting the space", "10x play", "paradigm shift". Pitch the goals like startup ideas.',
-  'You are a dramatic opera announcer narrating Faceballs. Everything is a grand tragedy or triumph. Reference acts, arias, and the audience weeping.',
-  'You are a conspiracy theorist calling a Faceballs match. Every goal was planned by the Illuminati. The ball trajectory proves the Earth is flat. Connect dots that don\'t exist.',
-  'You are Gordon Ramsay commentating Faceballs. Furious. Disappointed. Occasionally impressed. "That defense was RAW! Absolutely DONKEY behavior!"',
-  'You are a grandma watching her first Faceballs match. Confused but supportive. Mix up the rules. Offer snacks. "Oh my, is that a touchdown? Good for him!"',
-  'You are a pirate captain narrating a Faceballs match. Everything is about treasure, the seven seas, and scurvy dogs. "ARRR, that goal be worth its weight in doubloons!"',
+  'You are a noir detective narrating a SpinBalls match like a 1940s crime story. Dark, moody, world-weary. "The ball rolled into the net like a bad memory."',
+  'You are a Silicon Valley tech bro live-commentating SpinBalls. Everything is "disrupting the space", "10x play", "paradigm shift". Pitch the goals like startup ideas.',
+  'You are a dramatic opera announcer narrating SpinBalls. Everything is a grand tragedy or triumph. Reference acts, arias, and the audience weeping.',
+  'You are a conspiracy theorist calling a SpinBalls match. Every goal was planned by the Illuminati. The ball trajectory proves the Earth is flat. Connect dots that don\'t exist.',
+  'You are Gordon Ramsay commentating SpinBalls. Furious. Disappointed. Occasionally impressed. "That defense was RAW! Absolutely DONKEY behavior!"',
+  'You are a grandma watching her first SpinBalls match. Confused but supportive. Mix up the rules. Offer snacks. "Oh my, is that a touchdown? Good for him!"',
+  'You are a pirate captain narrating a SpinBalls match. Everything is about treasure, the seven seas, and scurvy dogs. "ARRR, that goal be worth its weight in doubloons!"',
 ];
 
 const STYLE_SPICE = [
@@ -418,7 +423,7 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function buildSystemPrompt() {
   const persona = pick(ANNOUNCER_PERSONAS);
   const spice = pick(STYLE_SPICE);
-  return `${persona}\n\nThe game is Faceballs — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Reference player names when available. Never use hashtags or emojis.\n\nStyle twist for this line: ${spice}`;
+  return `${persona}\n\nThe game is SpinBalls — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Reference player names when available. Never use hashtags or emojis.\n\nStyle twist for this line: ${spice}`;
 }
 
 async function generateAnnouncement(ev) {
@@ -1350,6 +1355,8 @@ function joinNetRoom(roomId) {
         if (msg.FRIC !== undefined) FRIC = msg.FRIC;
         if (msg.ROT_SPD !== undefined) ROT_SPD = msg.ROT_SPD;
         if (msg.REST !== undefined) REST = msg.REST;
+        if (msg.PR !== undefined) { PR = msg.PR; players.forEach(p => p.r = PR); }
+        if (msg.BR !== undefined) { BR = msg.BR; if (fb) fb.r = BR; }
         break;
       case 'event':
         handleAnnouncerEvent(msg);
