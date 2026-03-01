@@ -185,6 +185,40 @@ const TUNABLES = [
   { key: 'PR',       label: 'Player Size', min: 8, max: 36,    step: 2,     dp: 0 },
   { key: 'BR',       label: 'Ball Size',   min: 6, max: 24,    step: 2,     dp: 0 },
 ];
+
+// ===== Presets =====
+const PRESETS = [
+  { name: 'Default', MAX_POW: 16, POW_RATE: 20, FRIC: 0.982, ROT_SPD: 2.8, REST: 0.78, PR: 18, BR: 12 },
+  { name: 'Chaos',   MAX_POW: 36, POW_RATE: 55, FRIC: 0.995, ROT_SPD: 6.4, REST: 1.15, PR: 14, BR: 10 },
+  { name: 'Hockey',  MAX_POW: 24, POW_RATE: 40, FRIC: 0.998, ROT_SPD: 3.7, REST: 0.95, PR: 16, BR: 8 },
+  { name: 'Sumo',    MAX_POW: 30, POW_RATE: 15, FRIC: 0.965, ROT_SPD: 1.7, REST: 1.10, PR: 36, BR: 24 },
+  { name: 'Pinball', MAX_POW: 40, POW_RATE: 60, FRIC: 0.996, ROT_SPD: 7.0, REST: 1.20, PR: 10, BR: 6 },
+];
+let customPresets = [];
+let presetScrollOffset = 0;
+try {
+  const saved = JSON.parse(localStorage.getItem('spinballs-presets') || '[]');
+  if (Array.isArray(saved)) customPresets = saved;
+} catch {}
+
+function applyPreset(p) {
+  for (const t of TUNABLES) {
+    if (p[t.key] !== undefined) {
+      const v = Math.max(t.min, Math.min(t.max, +p[t.key].toFixed(t.dp)));
+      setParam(t.key, v);
+    }
+  }
+  sendParams();
+}
+function captureCurrentParams() {
+  const p = {};
+  for (const t of TUNABLES) p[t.key] = getParam(t.key);
+  return p;
+}
+function saveCustomPresets() {
+  localStorage.setItem('spinballs-presets', JSON.stringify(customPresets));
+}
+
 function getParam(k) {
   if (k === 'MAX_POW') return MAX_POW; if (k === 'POW_RATE') return POW_RATE;
   if (k === 'FRIC') return FRIC; if (k === 'ROT_SPD') return ROT_SPD; if (k === 'REST') return REST;
@@ -343,40 +377,33 @@ function buildAnnouncerPrompt(ev) {
 
 const HUME_ACTING = {
   goal: [
-    'screaming with excitement, over-the-top, barely able to contain yourself',
-    'absolutely losing your mind, voice cracking from intensity',
-    'operatic triumph, singing the words with joy',
-    'hushed disbelief building to explosive screaming',
+    'loud WWE announcer screaming with excitement, over-the-top, barely able to contain yourself, booming deep voice',
+    'loud WWE announcer absolutely losing your mind, voice cracking from intensity, slamming the desk',
+    'loud WWE announcer bellowing in triumph, roaring to the crowd, explosive energy',
   ],
   save: [
-    'shocked and amazed, gasping, disbelief',
-    'breathless, stunned, whispering in awe',
-    'furious and impressed at the same time, growling respect',
+    'loud WWE announcer shocked and amazed, gasping in disbelief, then roaring approval',
+    'loud WWE announcer furious and impressed, growling respect like acknowledging a worthy opponent',
   ],
   nearMiss: [
-    'dramatic tension, sharp intake of breath, on the edge of your seat',
-    'agonized groan, clutching your head in despair',
-    'nervous laughter, barely surviving the suspense',
+    'loud WWE announcer on the edge of your seat, dramatic tension, sharp intake of breath then screaming',
+    'loud WWE announcer groaning in agony, clutching your head, screaming about how close that was',
   ],
   gameStart: [
-    'hyped up, energetic, welcoming a roaring crowd',
-    'booming authority, commanding the arena like a wrestling announcer',
-    'conspiratorial whisper building to a shout',
+    'loud WWE announcer hyped up, booming authority, welcoming a roaring crowd to the arena, commanding and explosive',
+    'loud WWE announcer pumping up the crowd, deep powerful voice building to a roar',
   ],
   gameOver: [
-    'dramatic finale, epic conclusion, building to a crescendo',
-    'tearful, overwhelmed with emotion, voice breaking',
-    'smug satisfaction, like you predicted it all along',
+    'loud WWE announcer dramatic finale, epic conclusion, building to a thunderous crescendo',
+    'loud WWE announcer overwhelmed with intensity, roaring the final verdict to the crowd',
   ],
   commentary: [
-    'smooth confident broadcaster, classic sports commentator',
-    'paranoid whisper, like sharing a secret conspiracy',
-    'wistful nostalgia, reminiscing about the old days',
-    'barely suppressed giggles, finding everything hilarious',
+    'loud WWE announcer doing color commentary, confident and booming, hyping up the action',
+    'loud WWE announcer building suspense, deep authoritative voice rising with excitement',
   ],
 };
 function getHumeActing(event) {
-  const options = HUME_ACTING[event] || ['enthusiastic sports announcer'];
+  const options = HUME_ACTING[event] || ['loud WWE announcer, booming deep voice, explosive energy'];
   return options[Math.floor(Math.random() * options.length)];
 }
 
@@ -388,42 +415,26 @@ async function blobToBase64(blob) {
   });
 }
 
-const ANNOUNCER_PERSONAS = [
-  'You are a completely unhinged WWE-style wrestling announcer calling a SpinBalls match. Treat every play like a championship moment. Scream. Use wrestling metaphors. "BAH GAWD!"',
-  'You are David Attenborough narrating a SpinBalls match like a nature documentary. Treat the players as fascinating creatures in their natural habitat. Hushed, reverent wonder.',
-  'You are a medieval herald announcing a SpinBalls match as if it were a grand jousting tournament. Use "ye", "hark", "forsooth". Speak of honor and glory.',
-  'You are a telenovela narrator for a SpinBalls match. Everything is dramatic betrayal, forbidden love, and destiny. Passion drips from every word.',
-  'You are a hyperactive anime play-by-play announcer. Reference power levels, ultimate moves, and dramatic transformations. "IMPOSSIBLE! He\'s broken through his limits!"',
-  'You are a noir detective narrating a SpinBalls match like a 1940s crime story. Dark, moody, world-weary. "The ball rolled into the net like a bad memory."',
-  'You are a Silicon Valley tech bro live-commentating SpinBalls. Everything is "disrupting the space", "10x play", "paradigm shift". Pitch the goals like startup ideas.',
-  'You are a dramatic opera announcer narrating SpinBalls. Everything is a grand tragedy or triumph. Reference acts, arias, and the audience weeping.',
-  'You are a conspiracy theorist calling a SpinBalls match. Every goal was planned by the Illuminati. The ball trajectory proves the Earth is flat. Connect dots that don\'t exist.',
-  'You are Gordon Ramsay commentating SpinBalls. Furious. Disappointed. Occasionally impressed. "That defense was RAW! Absolutely DONKEY behavior!"',
-  'You are a grandma watching her first SpinBalls match. Confused but supportive. Mix up the rules. Offer snacks. "Oh my, is that a touchdown? Good for him!"',
-  'You are a pirate captain narrating a SpinBalls match. Everything is about treasure, the seven seas, and scurvy dogs. "ARRR, that goal be worth its weight in doubloons!"',
-];
+const ANNOUNCER_PERSONA = 'You are an absolutely unhinged WWE-style wrestling announcer calling a SpinBalls match. You are ALWAYS this character — loud, over-the-top, treating every single play like a WrestleMania championship moment. Scream. Slam the desk. Use wrestling metaphors. "BAH GAWD!" "WHAT A SLOBBERKNOCKER!" You are the unholy lovechild of Jim Ross, Michael Cole, and a monster truck rally announcer. You never break character. Every goal is the greatest goal in HISTORY. Every save is a MIRACLE. You live for this.';
 
 const STYLE_SPICE = [
-  'Make a wild comparison to something completely unrelated.',
-  'Invent a ridiculous statistic.',
-  'Break the fourth wall briefly.',
-  'Reference an imaginary rivalry or backstory between players.',
-  'Use an extended metaphor from cooking or food.',
-  'Pretend you\'re getting emotional and tearing up.',
-  'Suddenly question reality for a moment.',
-  'Make up a dramatic nickname for a player on the spot.',
-  'Reference the weather or atmosphere in the imaginary stadium.',
-  'Briefly pretend the game has cosmic or supernatural significance.',
-  'Work in a pun or wordplay.',
-  'Narrate as if the replay is in slow motion.',
+  'Invent a ridiculous statistic about this play.',
+  'Reference an imaginary rivalry or backstory between the players.',
+  'Make up a dramatic wrestling nickname for a player on the spot.',
+  'Reference the roaring crowd or atmosphere in the arena.',
+  'Pretend you are getting emotional and tearing up from the intensity.',
+  'Claim this play has cosmic or supernatural significance.',
+  'Compare this play to a legendary moment in wrestling or sports history.',
+  'Threaten to throw your headset across the booth.',
+  'Claim you have never seen anything like this in your entire career.',
+  'Call for an instant replay because nobody will believe what just happened.',
 ];
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 function buildSystemPrompt() {
-  const persona = pick(ANNOUNCER_PERSONAS);
   const spice = pick(STYLE_SPICE);
-  return `${persona}\n\nThe game is SpinBalls — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Reference player names when available. Never use hashtags or emojis.\n\nStyle twist for this line: ${spice}`;
+  return `${ANNOUNCER_PERSONA}\n\nThe game is SpinBalls — a chaotic multiplayer football game where players are bouncing balls that shoot themselves around the field. Give 1-2 short punchy sentences. Reference player names when available. Never use hashtags or emojis.\n\nStyle twist for this line: ${spice}`;
 }
 
 async function generateAnnouncement(ev) {
@@ -437,7 +448,7 @@ async function generateAnnouncement(ev) {
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + announcerKeys.openai },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        temperature: 1.2,
+        temperature: 0.9,
         max_tokens: 80,
         messages: [
           { role: 'system', content: buildSystemPrompt() },
@@ -1112,8 +1123,12 @@ function drawTuningPanel() {
   ctx.fillText('\u2699', TUNE_BTN.x + TUNE_BTN.w / 2, TUNE_BTN.y + TUNE_BTN.h / 2);
   if (!tuningOpen) return;
   const { x, y, w, rowH, pad } = TUNE_PANEL;
-  const totalRows = TUNABLES.length + 1; // +1 for aim line toggle
-  const h = pad * 2 + totalRows * rowH;
+  // Calculate dynamic panel height
+  const visibleCustom = Math.min(customPresets.length, 3);
+  const presetRows = 2 + (visibleCustom > 0 ? visibleCustom : 0) + 1; // 2 built-in rows + custom + save btn
+  const presetSectionH = 8 + 20 + presetRows * rowH; // separator+header + rows
+  const baseRows = TUNABLES.length + 1; // params + aim line toggle
+  const h = pad * 2 + baseRows * rowH + presetSectionH;
   ctx.fillStyle = 'rgba(0,0,0,0.85)';
   ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
@@ -1143,6 +1158,93 @@ function drawTuningPanel() {
   ctx.fillRect(tbx, tby, tbw, tbh);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(showAimLine ? 'ON' : 'OFF', tbx + tbw / 2, ary + rowH / 2);
+
+  // --- Presets section ---
+  let py = ary + rowH + 8;
+  // Separator line
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x + 8, py); ctx.lineTo(x + w - 8, py); ctx.stroke();
+  py += 4;
+  // Header
+  ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = '#888'; ctx.textAlign = 'left';
+  ctx.fillText('PRESETS', x + 8, py + 8);
+  py += 16;
+
+  // Built-in preset buttons - Row 1: Default, Chaos, Hockey
+  const pbw = 62, pbh = 22, pgap = 4;
+  const row1 = PRESETS.slice(0, 3);
+  for (let i = 0; i < row1.length; i++) {
+    const bx = x + 6 + i * (pbw + pgap);
+    ctx.fillStyle = '#3a3a5a';
+    ctx.fillRect(bx, py, pbw, pbh);
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+    ctx.strokeRect(bx, py, pbw, pbh);
+    ctx.fillStyle = '#ddd'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(row1[i].name, bx + pbw / 2, py + pbh / 2);
+  }
+  py += pbh + 4;
+
+  // Built-in preset buttons - Row 2: Sumo, Pinball
+  const row2 = PRESETS.slice(3, 5);
+  for (let i = 0; i < row2.length; i++) {
+    const bx = x + 6 + i * (pbw + pgap);
+    ctx.fillStyle = '#3a3a5a';
+    ctx.fillRect(bx, py, pbw, pbh);
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+    ctx.strokeRect(bx, py, pbw, pbh);
+    ctx.fillStyle = '#ddd'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(row2[i].name, bx + pbw / 2, py + pbh / 2);
+  }
+  py += pbh + 4;
+
+  // Custom presets (scrollable, max 3 visible)
+  if (customPresets.length > 0) {
+    const maxVisible = 3;
+    const showScroll = customPresets.length > maxVisible;
+    if (presetScrollOffset > customPresets.length - maxVisible) presetScrollOffset = Math.max(0, customPresets.length - maxVisible);
+    const visStart = presetScrollOffset;
+    const visEnd = Math.min(customPresets.length, visStart + maxVisible);
+    // Scroll up arrow
+    if (showScroll && presetScrollOffset > 0) {
+      ctx.fillStyle = '#666'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('\u25B2', x + w / 2, py + 6);
+      py += 14;
+    }
+    for (let i = visStart; i < visEnd; i++) {
+      const cp = customPresets[i];
+      // Name label
+      ctx.font = '11px sans-serif'; ctx.fillStyle = '#ccc'; ctx.textAlign = 'left';
+      ctx.fillText(cp.name.length > 10 ? cp.name.slice(0, 10) + '..' : cp.name, x + 8, py + rowH / 2);
+      // Apply button
+      const applyW = 48, applyH = 20, applyX = x + w - 86, applyY = py + (rowH - applyH) / 2;
+      ctx.fillStyle = '#2a80ff';
+      ctx.fillRect(applyX, applyY, applyW, applyH);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('Apply', applyX + applyW / 2, py + rowH / 2);
+      // Delete button
+      const delW = 26, delH = 20, delX = x + w - 34, delY = py + (rowH - delH) / 2;
+      ctx.fillStyle = '#8a2020';
+      ctx.fillRect(delX, delY, delW, delH);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('\u2715', delX + delW / 2, py + rowH / 2);
+      py += rowH;
+    }
+    // Scroll down arrow
+    if (showScroll && visEnd < customPresets.length) {
+      ctx.fillStyle = '#666'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('\u25BC', x + w / 2, py + 6);
+      py += 14;
+    }
+  }
+
+  // "+ Save Current" button
+  const saveBtnW = w - 16, saveBtnH = 24, saveBtnX = x + 8, saveBtnY = py + 2;
+  ctx.fillStyle = '#2d6a3e';
+  ctx.fillRect(saveBtnX, saveBtnY, saveBtnW, saveBtnH);
+  ctx.strokeStyle = '#4a9a5e'; ctx.lineWidth = 1;
+  ctx.strokeRect(saveBtnX, saveBtnY, saveBtnW, saveBtnH);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('+ Save Current', saveBtnX + saveBtnW / 2, saveBtnY + saveBtnH / 2);
 }
 
 function handleTuningClick(pos) {
@@ -1151,8 +1253,12 @@ function handleTuningClick(pos) {
   }
   if (!tuningOpen) return false;
   const { x, y, w, rowH, pad } = TUNE_PANEL;
-  const totalRows = TUNABLES.length + 1;
-  const h = pad * 2 + totalRows * rowH;
+  // Dynamic panel height (must match drawTuningPanel)
+  const visibleCustom = Math.min(customPresets.length, 3);
+  const presetRows = 2 + (visibleCustom > 0 ? visibleCustom : 0) + 1;
+  const presetSectionH = 8 + 20 + presetRows * rowH;
+  const baseRows = TUNABLES.length + 1;
+  const h = pad * 2 + baseRows * rowH + presetSectionH;
   if (inRect(pos, x, y, w, h)) {
     const bw = 24, bh = 20;
     for (let i = 0; i < TUNABLES.length; i++) {
@@ -1172,6 +1278,70 @@ function handleTuningClick(pos) {
     const ary = y + pad + TUNABLES.length * rowH;
     const tbw = 52, tbh = 20, tbx = x + w - tbw - 8, tby = ary + (rowH - tbh) / 2;
     if (inRect(pos, tbx, tby, tbw, tbh)) { showAimLine = !showAimLine; return true; }
+
+    // --- Presets hit-testing ---
+    let py = ary + rowH + 8 + 4 + 16; // separator + header
+    const pbw = 62, pbh = 22, pgap = 4;
+
+    // Row 1: Default, Chaos, Hockey
+    for (let i = 0; i < 3; i++) {
+      const bx = x + 6 + i * (pbw + pgap);
+      if (inRect(pos, bx, py, pbw, pbh)) { applyPreset(PRESETS[i]); return true; }
+    }
+    py += pbh + 4;
+
+    // Row 2: Sumo, Pinball
+    for (let i = 0; i < 2; i++) {
+      const bx = x + 6 + i * (pbw + pgap);
+      if (inRect(pos, bx, py, pbw, pbh)) { applyPreset(PRESETS[3 + i]); return true; }
+    }
+    py += pbh + 4;
+
+    // Custom presets
+    if (customPresets.length > 0) {
+      const maxVisible = 3;
+      const showScroll = customPresets.length > maxVisible;
+      const visStart = presetScrollOffset;
+      const visEnd = Math.min(customPresets.length, visStart + maxVisible);
+      // Scroll up arrow
+      if (showScroll && presetScrollOffset > 0) {
+        if (inRect(pos, x, py, w, 14)) { presetScrollOffset--; return true; }
+        py += 14;
+      }
+      for (let i = visStart; i < visEnd; i++) {
+        // Apply button
+        const applyW = 48, applyH = 20, applyX = x + w - 86, applyY = py + (rowH - applyH) / 2;
+        if (inRect(pos, applyX, applyY, applyW, applyH)) { applyPreset(customPresets[i]); return true; }
+        // Delete button
+        const delW = 26, delH = 20, delX = x + w - 34, delY = py + (rowH - delH) / 2;
+        if (inRect(pos, delX, delY, delW, delH)) {
+          customPresets.splice(i, 1);
+          saveCustomPresets();
+          if (presetScrollOffset > 0 && presetScrollOffset >= customPresets.length - maxVisible + 1) presetScrollOffset--;
+          return true;
+        }
+        py += rowH;
+      }
+      // Scroll down arrow
+      if (showScroll && visEnd < customPresets.length) {
+        if (inRect(pos, x, py, w, 14)) { presetScrollOffset++; return true; }
+        py += 14;
+      }
+    }
+
+    // Save Current button
+    const saveBtnW = w - 16, saveBtnH = 24, saveBtnX = x + 8, saveBtnY = py + 2;
+    if (inRect(pos, saveBtnX, saveBtnY, saveBtnW, saveBtnH)) {
+      const name = prompt('Preset name:');
+      if (name && name.trim()) {
+        const preset = captureCurrentParams();
+        preset.name = name.trim().slice(0, 20);
+        customPresets.push(preset);
+        saveCustomPresets();
+      }
+      return true;
+    }
+
     return true; // consumed by panel area
   }
   return false;
