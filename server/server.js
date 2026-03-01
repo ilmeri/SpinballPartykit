@@ -501,6 +501,7 @@ export default class Server {
         if (msg.angle !== undefined) p.angle = msg.angle;
         if (msg.action === 'down' && p.state !== ST_AIM) { p.state = ST_AIM; p.power = 0; }
         else if (msg.action === 'up' && p.state === ST_AIM) p.shoot();
+        else if (msg.action === 'cancel' && p.state === ST_AIM) { p.state = ST_ROT; p.power = 0; }
         break;
       }
       case 'mode': {

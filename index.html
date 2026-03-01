@@ -1454,6 +1454,16 @@ function handleMode2Up() {
   mode2ShootTime = performance.now();
 }
 
+// ===== Cancel Aim (right-click) =====
+function handleCancelAim() {
+  if (gameState !== 'PLAYING' || mySlot < 0) return;
+  const p = players[mySlot];
+  if (!p || p.state !== ST_AIM) return;
+  p.state = ST_ROT; p.power = 0;
+  aimPos = null;
+  if (ws) ws.send(JSON.stringify({ type: 'input', action: 'cancel' }));
+}
+
 // ===== Mode Toggle Buttons =====
 function handleModeButtonClick(pos) {
   if (gameState !== 'PLAYING') return false;
@@ -1554,7 +1564,9 @@ window.addEventListener('keyup', e => {
 });
 
 // Mouse — canvas handles UI clicks + game input
+cvs.addEventListener('contextmenu', e => e.preventDefault());
 cvs.addEventListener('mousedown', e => {
+  if (e.button === 2) { handleCancelAim(); return; }
   const pos = canvasPos(e);
   if (handleAnnouncerButtonClick(pos)) return;
   if (gameState === 'PLAYING' && handleTuningClick(pos)) return;
