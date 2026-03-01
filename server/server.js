@@ -161,6 +161,8 @@ export default class Server {
     this.rematchVotes = new Set();
     this.shootModes = [0, 0, 0, 0];
     this.autoRematchTimer = 0;
+    // Chat rate limiting
+    this.lastChatTime = [0, 0, 0, 0];
     // Announcer tracking
     this.playerGoals = [0, 0, 0, 0];
     this.lastKickoffTime = 0;
@@ -551,10 +553,26 @@ export default class Server {
         this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR });
         break;
       }
+      case 'taunt': {
+        if (slot >= 0 && typeof msg.taunt === 'number' && msg.taunt >= 0 && msg.taunt <= 9) {
+          this.broadcast({ type: 'taunt', slot, taunt: msg.taunt });
+        }
+        break;
+      }
       case 'announce': {
         if (msg.audio && msg.text) {
           this.broadcast({ type: 'announce', audio: msg.audio, text: msg.text });
         }
+        break;
+      }
+      case 'chat': {
+        if (slot < 0 || !this.names[slot]) break;
+        const now = Date.now();
+        if (now - this.lastChatTime[slot] < 500) break;
+        this.lastChatTime[slot] = now;
+        const text = (msg.text || '').trim().slice(0, 80);
+        if (!text) break;
+        this.broadcast({ type: 'chat', slot, name: this.names[slot], text });
         break;
       }
     }
