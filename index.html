@@ -1653,11 +1653,23 @@ function joinNetRoom(roomId) {
     }
   };
 
-  ws.onclose = () => {
-    if (gameState !== 'MENU') {
-      statusMsg = 'Disconnected';
-      leaveRoom();
+  ws.onopen = () => {
+    if (statusMsg === 'Reconnecting...') {
+      statusMsg = '';
+      ws.send(JSON.stringify({ type: 'name', name: myName }));
     }
+  };
+
+  ws.onclose = () => {
+    if (gameState === 'MENU') return;
+    statusMsg = 'Reconnecting...';
+    // Give PartySocket time to auto-reconnect before giving up
+    setTimeout(() => {
+      if (statusMsg === 'Reconnecting...') {
+        statusMsg = 'Disconnected';
+        leaveRoom();
+      }
+    }, 5000);
   };
 
   gameState = 'WAITING';
