@@ -178,7 +178,7 @@ let autoRematchTimer = 0;
 const AUTO_REMATCH_DELAY = 3.0;
 
 // Shoot mode (0 = classic auto-rotate, 1 = click-aim)
-let myShootMode = 0;
+let myShootMode = 1;
 let aimPos = null;
 let lastAimSend = 0;
 let mode2ShootTime = 0; // timestamp of last mode 2 shoot (grace period for server state)
@@ -188,7 +188,7 @@ const MODE_BTN = { x: 10, y: 8, w: 28, h: 24, gap: 4 };
 
 // Tuning panel
 let tuningOpen = false;
-let showAimLine = false;
+let showAimLine = true;
 const TUNE_BTN = { x: W - 36, y: 8, w: 28, h: 24 };
 const TUNE_PANEL = { x: W - 220, y: 36, w: 212, rowH: 28, pad: 8 };
 const TUNABLES = [
@@ -403,7 +403,11 @@ function buildAnnouncerPrompt(ev) {
     }
     case 'goal': {
       const who = ev.scorer || teamNames[ev.scorerTeam];
-      userMsg = `GOAL! ${who} scores for ${teamNames[ev.scorerTeam]}! Score is now Blue ${ev.scores[0]} - ${ev.scores[1]} Red.`;
+      if (ev.ownGoal && ev.scorer) {
+        userMsg = `OWN GOAL! Oh no, ${ev.scorer} puts it into their OWN net! That's a disaster — a gift goal for ${teamNames[ev.scorerTeam]}! Score is now Blue ${ev.scores[0]} - ${ev.scores[1]} Red.`;
+      } else {
+        userMsg = `GOAL! ${who} scores for ${teamNames[ev.scorerTeam]}! Score is now Blue ${ev.scores[0]} - ${ev.scores[1]} Red.`;
+      }
       if (ev.quickGoal) userMsg += ' This was a lightning-fast goal, barely seconds after kickoff!';
       if (ev.isMatchPoint) userMsg += ` ${teamNames[ev.scorerTeam]} is now just ONE goal away from winning!`;
       if (ev.isGameOver) userMsg += ' This is the WINNING GOAL! Game over!';

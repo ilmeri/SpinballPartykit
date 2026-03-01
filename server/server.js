@@ -360,9 +360,11 @@ export default class Server {
       if (this.teamScores[scoringTeam] >= WIN_SCORE) {
         this.winner = { team: scoringTeam };
       }
+      const isOwnGoal = gScorerIdx >= 0 && this.players[gScorerIdx].team !== scoringTeam;
       this.broadcast({ type: 'event', event: 'goal',
         scorer: gScorerIdx >= 0 ? this.names[gScorerIdx] : '',
         scorerTeam: scoringTeam,
+        ownGoal: isOwnGoal,
         scores: [...this.teamScores],
         quickGoal: timeSinceKickoff < 4,
         isMatchPoint: this.teamScores[scoringTeam] === WIN_SCORE - 1 && !this.winner,
