@@ -2038,7 +2038,8 @@ cvs.addEventListener('mousemove', e => {
   if (gameState === 'PLAYING' && myShootMode === 1 && aimPos) handleMode2Move(canvasPos(e));
   if (gameState === 'PLAYING' && myShootMode === 3) handleMode4AimMove(canvasPos(e));
 });
-cvs.addEventListener('mouseup', () => {
+cvs.addEventListener('mouseup', e => {
+  if (e.button === 2) return; // right-click release — ignore
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
     else if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
@@ -2091,6 +2092,7 @@ document.addEventListener('mousemove', e => {
 });
 document.addEventListener('mouseup', e => {
   if (e.target === cvs) return;
+  if (e.button === 2) return;
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
     else if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
