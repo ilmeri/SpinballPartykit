@@ -110,6 +110,7 @@ let FRIC = 0.982, REST = 0.78;
 const MIN_V = 0.15;
 let MAX_POW = 16, POW_RATE = 20;
 let ROT_SPD = 2.8;
+let MOVE_ACCEL = 0.8, MOVE_MAX_SPD = 5;
 let PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
@@ -186,6 +187,11 @@ const AIM_SEND_INTERVAL = 100; // ~10Hz throttle for aim updates
 const MODE2_SHOOT_GRACE = 200; // ms: ignore server state/power after mode 2 shoot
 const MODE_BTN = { x: 10, y: 8, w: 28, h: 24, gap: 4 };
 
+// WASD movement state (mode 2)
+const wasdKeys = { w: false, a: false, s: false, d: false };
+let myMoveDx = 0, myMoveDy = 0;
+let myMoveAngle = 0;
+
 // Tuning panel
 let tuningOpen = false;
 let showAimLine = true;
@@ -199,6 +205,8 @@ const TUNABLES = [
   { key: 'REST',     label: 'Bounce',   min: 0.3,  max: 1.2,   step: 0.05,  dp: 2 },
   { key: 'PR',       label: 'Player Size', min: 8, max: 36,    step: 2,     dp: 0 },
   { key: 'BR',       label: 'Ball Size',   min: 6, max: 24,    step: 2,     dp: 0 },
+  { key: 'MOVE_ACCEL', label: 'Move Accel',  min: 0.1, max: 3,   step: 0.1,   dp: 1 },
+  { key: 'MOVE_MAX_SPD', label: 'Move Speed', min: 1,  max: 15,  step: 0.5,   dp: 1 },
 ];
 
 // ===== Presets =====
@@ -250,6 +258,7 @@ const chatInputEl = document.getElementById('chat-input');
 const CHAT_MAX_LEN = 80;
 const CHAT_TEAM_COLORS = ['#5ca0f0', '#ff6868'];
 
+chatInputEl.addEventListener('focus', () => { if (myShootMode === 2) clearWasdKeys(); });
 chatInputEl.addEventListener('keydown', e => {
   e.stopPropagation();
   if (e.key === 'Enter') {
@@ -291,15 +300,18 @@ function getParam(k) {
   if (k === 'MAX_POW') return MAX_POW; if (k === 'POW_RATE') return POW_RATE;
   if (k === 'FRIC') return FRIC; if (k === 'ROT_SPD') return ROT_SPD; if (k === 'REST') return REST;
   if (k === 'PR') return PR; if (k === 'BR') return BR;
+  if (k === 'MOVE_ACCEL') return MOVE_ACCEL; if (k === 'MOVE_MAX_SPD') return MOVE_MAX_SPD;
 }
 function setParam(k, v) {
   if (k === 'MAX_POW') MAX_POW = v; else if (k === 'POW_RATE') POW_RATE = v;
   else if (k === 'FRIC') FRIC = v; else if (k === 'ROT_SPD') ROT_SPD = v; else if (k === 'REST') REST = v;
   else if (k === 'PR') { PR = v; players.forEach(p => p.r = PR); }
   else if (k === 'BR') { BR = v; if (fb) fb.r = BR; }
+  else if (k === 'MOVE_ACCEL') MOVE_ACCEL = v;
+  else if (k === 'MOVE_MAX_SPD') MOVE_MAX_SPD = v;
 }
 function sendParams() {
-  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR }));
+  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR, MOVE_ACCEL, MOVE_MAX_SPD }));
 }
 
 // ===== Announcer =====
@@ -1195,7 +1207,9 @@ function drawScoreboard() {
   ctx.font = '13px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.textAlign = 'center';
   const hint = myShootMode === 0
     ? 'Hold to aim & charge, release to shoot'
-    : 'Click field to aim, hold to charge, release to shoot';
+    : myShootMode === 1
+    ? 'Click field to aim, hold to charge, release to shoot'
+    : 'WASD to move, Space/Click to charge kick, release to shoot';
   ctx.fillText(hint + '  |  First to ' + WIN_SCORE, W / 2, H - 16);
   // Debug overlay
   ctx.font = '11px monospace'; ctx.fillStyle = '#ff0'; ctx.textAlign = 'left';
@@ -1204,7 +1218,7 @@ function drawScoreboard() {
 
 function drawModeButtons() {
   if (gameState !== 'PLAYING') return;
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     const x = MODE_BTN.x + i * (MODE_BTN.w + MODE_BTN.gap);
     const active = myShootMode === i;
     ctx.fillStyle = active ? '#2a80ff' : 'rgba(255,255,255,0.1)';
@@ -1488,6 +1502,10 @@ function unpackState(buf) {
     if (myShootMode === 1) {
       const inGrace = aimPos || (performance.now() - mode2ShootTime < MODE2_SHOOT_GRACE);
       if (!inGrace) { p.power = buf[o+5]; p.state = buf[o+6]; }
+    } else if (myShootMode === 2) {
+      // WASD mode: client-authoritative for angle; grace period for state/power after kick
+      const inGrace = p.state === ST_AIM || (performance.now() - mode2ShootTime < MODE2_SHOOT_GRACE);
+      if (!inGrace) { p.power = buf[o+5]; p.state = buf[o+6]; }
     } else {
       p.angle = buf[o+4]; p.power = buf[o+5]; p.state = buf[o+6];
     }
@@ -1636,6 +1654,8 @@ function joinNetRoom(roomId) {
         if (msg.REST !== undefined) REST = msg.REST;
         if (msg.PR !== undefined) { PR = msg.PR; players.forEach(p => p.r = PR); }
         if (msg.BR !== undefined) { BR = msg.BR; if (fb) fb.r = BR; }
+        if (msg.MOVE_ACCEL !== undefined) MOVE_ACCEL = msg.MOVE_ACCEL;
+        if (msg.MOVE_MAX_SPD !== undefined) MOVE_MAX_SPD = msg.MOVE_MAX_SPD;
         break;
       case 'event':
         handleAnnouncerEvent(msg);
@@ -1704,6 +1724,7 @@ function leaveRoom() {
   rematchVoteCount = 0;
   rematchVoteTotal = 0;
   showChatPanel(false);
+  clearWasdKeys();
 }
 
 // ===== Input =====
@@ -1769,14 +1790,62 @@ function handleCancelAim() {
   if (ws) ws.send(JSON.stringify({ type: 'input', action: 'cancel' }));
 }
 
+// ===== Mode 3 (WASD + kick) Input =====
+function sendWasdDirection() {
+  const dx = (wasdKeys.d ? 1 : 0) - (wasdKeys.a ? 1 : 0);
+  const dy = (wasdKeys.s ? 1 : 0) - (wasdKeys.w ? 1 : 0);
+  if (dx === myMoveDx && dy === myMoveDy) return;
+  myMoveDx = dx; myMoveDy = dy;
+  if (dx !== 0 || dy !== 0) myMoveAngle = Math.atan2(dy, dx);
+  if (ws) ws.send(JSON.stringify({ type: 'move', dx, dy }));
+}
+
+function clearWasdKeys() {
+  wasdKeys.w = false; wasdKeys.a = false; wasdKeys.s = false; wasdKeys.d = false;
+  if (myMoveDx !== 0 || myMoveDy !== 0) {
+    myMoveDx = 0; myMoveDy = 0;
+    if (ws) ws.send(JSON.stringify({ type: 'move', dx: 0, dy: 0 }));
+  }
+}
+
+function handleMode3Down() {
+  if (goalScoredBy || winner || mySlot < 0) return;
+  const p = players[mySlot];
+  if (!p || p.state === ST_AIM) return;
+  p.state = ST_AIM; p.power = 0;
+  p.angle = myMoveAngle;
+  if (ws) ws.send(JSON.stringify({ type: 'input', action: 'down', angle: myMoveAngle }));
+}
+
+function handleMode3Up() {
+  if (mySlot < 0) return;
+  const p = players[mySlot];
+  if (!p || p.state !== ST_AIM) return;
+  p.angle = myMoveAngle;
+  if (ws) ws.send(JSON.stringify({ type: 'input', action: 'up', angle: myMoveAngle }));
+  p.shoot();
+  mode2ShootTime = performance.now();
+}
+
 // ===== Mode Toggle Buttons =====
 function handleModeButtonClick(pos) {
   if (gameState !== 'PLAYING') return false;
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     const x = MODE_BTN.x + i * (MODE_BTN.w + MODE_BTN.gap);
     if (inRect(pos, x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h)) {
-      myShootMode = i;
+      if (i === myShootMode) return true;
+      // Cancel active charge
+      const p = mySlot >= 0 ? players[mySlot] : null;
+      if (p && p.state === ST_AIM) {
+        p.state = ST_ROT; p.power = 0;
+        if (ws) ws.send(JSON.stringify({ type: 'input', action: 'cancel' }));
+      }
       aimPos = null;
+      // Clear WASD state when leaving mode 2
+      if (myShootMode === 2) clearWasdKeys();
+      myShootMode = i;
+      // Initialize moveAngle from player angle when entering mode 2
+      if (i === 2 && p) myMoveAngle = p.angle;
       if (ws) ws.send(JSON.stringify({ type: 'mode', mode: i }));
       return true;
     }
@@ -1869,13 +1938,37 @@ window.addEventListener('keydown', e => {
       return;
     }
   }
-  if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (myShootMode === 0) handleInputDown(); }
+  // WASD movement (mode 2)
+  if (myShootMode === 2 && gameState === 'PLAYING') {
+    const k = e.key.toLowerCase();
+    if (k in wasdKeys && !wasdKeys[k]) {
+      wasdKeys[k] = true;
+      sendWasdDirection();
+    }
+  }
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    if (myShootMode === 0) handleInputDown();
+    else if (myShootMode === 2) handleMode3Down();
+  }
 });
 
 window.addEventListener('keyup', e => {
   if (document.activeElement === chatInputEl) return;
   if (nameEditing || showCodeInput) return;
-  if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (myShootMode === 0) handleInputUp(); }
+  // WASD release (mode 2)
+  if (myShootMode === 2) {
+    const k = e.key.toLowerCase();
+    if (k in wasdKeys && wasdKeys[k]) {
+      wasdKeys[k] = false;
+      sendWasdDirection();
+    }
+  }
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    if (myShootMode === 0) handleInputUp();
+    else if (myShootMode === 2) handleMode3Up();
+  }
 });
 
 // Mouse — canvas handles UI clicks + game input
@@ -1890,6 +1983,7 @@ cvs.addEventListener('mousedown', e => {
   if (result === 'focusName') setTimeout(() => nameEl.focus(), 0); // defer for desktop
   if (gameState === 'PLAYING') {
     if (myShootMode === 1) handleMode2Down(pos);
+    else if (myShootMode === 2) handleMode3Down();
     else handleInputDown();
   }
 });
@@ -1899,6 +1993,7 @@ cvs.addEventListener('mousemove', e => {
 cvs.addEventListener('mouseup', () => {
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
+    else if (myShootMode === 2) handleMode3Up();
     else handleInputUp();
   }
 });
@@ -1914,6 +2009,7 @@ cvs.addEventListener('touchstart', e => {
   if (result === 'focusName') nameEl.focus(); // must be synchronous for mobile keyboard
   if (gameState === 'PLAYING') {
     if (myShootMode === 1) handleMode2Down(pos);
+    else if (myShootMode === 2) handleMode3Down();
     else handleInputDown();
   }
 }, { passive: false });
@@ -1925,6 +2021,7 @@ cvs.addEventListener('touchend', e => {
   e.preventDefault();
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
+    else if (myShootMode === 2) handleMode3Up();
     else handleInputUp();
   }
 }, { passive: false });
@@ -1932,7 +2029,10 @@ cvs.addEventListener('touchend', e => {
 // Document-level — catch touches/clicks outside canvas (black area) for game input only
 document.addEventListener('mousedown', e => {
   if (e.target === cvs) return; // already handled above
-  if (gameState === 'PLAYING' && myShootMode === 0) handleInputDown();
+  if (gameState === 'PLAYING') {
+    if (myShootMode === 0) handleInputDown();
+    else if (myShootMode === 2) handleMode3Down();
+  }
 });
 document.addEventListener('mousemove', e => {
   if (gameState === 'PLAYING' && myShootMode === 1 && aimPos) handleMode2Move(canvasPos(e));
@@ -1941,22 +2041,31 @@ document.addEventListener('mouseup', e => {
   if (e.target === cvs) return;
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
+    else if (myShootMode === 2) handleMode3Up();
     else handleInputUp();
   }
 });
 document.addEventListener('touchstart', e => {
   if (e.target === cvs) return;
   e.preventDefault();
-  if (gameState === 'PLAYING' && myShootMode === 0) handleInputDown();
+  if (gameState === 'PLAYING') {
+    if (myShootMode === 0) handleInputDown();
+    else if (myShootMode === 2) handleMode3Down();
+  }
 }, { passive: false });
 document.addEventListener('touchend', e => {
   if (e.target === cvs) return;
   e.preventDefault();
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
+    else if (myShootMode === 2) handleMode3Up();
     else handleInputUp();
   }
 }, { passive: false });
+
+// Clear WASD on window blur/visibility change
+window.addEventListener('blur', () => { if (myShootMode === 2) clearWasdKeys(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && myShootMode === 2) clearWasdKeys(); });
 
 // Fullscreen (with vendor prefixes for mobile)
 function toggleFullscreen() {
@@ -1985,6 +2094,21 @@ function fixedUpdate() {
   if (me && me.occupied) {
     if (myShootMode === 0 && me.state === ST_ROT) me.angle += ROT_SPD * FDT;
     if (me.state === ST_AIM) me.power = Math.min(me.power + POW_RATE * FDT, MAX_POW);
+    // WASD acceleration (mode 2)
+    if (myShootMode === 2 && (myMoveDx !== 0 || myMoveDy !== 0)) {
+      let dx = myMoveDx, dy = myMoveDy;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 1) { dx /= len; dy /= len; }
+      const prevSpeed = Math.sqrt(me.vx * me.vx + me.vy * me.vy);
+      me.vx += dx * MOVE_ACCEL;
+      me.vy += dy * MOVE_ACCEL;
+      const spd = Math.sqrt(me.vx * me.vx + me.vy * me.vy);
+      if (spd > MOVE_MAX_SPD && spd > prevSpeed) {
+        const cap = Math.max(MOVE_MAX_SPD, prevSpeed);
+        me.vx *= cap / spd; me.vy *= cap / spd;
+      }
+      me.angle = myMoveAngle;
+    }
     me.x += me.vx; me.y += me.vy;
     me.vx *= FRIC; me.vy *= FRIC;
     if (Math.abs(me.vx) < MIN_V && Math.abs(me.vy) < MIN_V) { me.vx = 0; me.vy = 0; }

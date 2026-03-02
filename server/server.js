@@ -6,6 +6,7 @@ let FRIC = 0.982, REST = 0.78;
 const MIN_V = 0.15;
 let MAX_POW = 16, POW_RATE = 20;
 let ROT_SPD = 2.8;
+let MOVE_ACCEL = 0.8, MOVE_MAX_SPD = 5;
 let PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
@@ -111,25 +112,45 @@ class Player {
     this.power = 0; this.state = ST_ROT;
     this.occupied = false;
     this.shootMode = 0;
+    this.moveDx = 0; this.moveDy = 0;
+    this.moveAngle = this.angle;
   }
   reset() {
     this.x = this.sx; this.y = this.sy; this.vx = 0; this.vy = 0;
     this.angle = Math.random() * Math.PI * 2;
     this.power = 0; this.state = ST_ROT;
+    this.moveDx = 0; this.moveDy = 0;
   }
   update(dt) {
     if (this.occupied) {
       if (this.shootMode === 0 && this.state === ST_ROT) this.angle += ROT_SPD * dt;
       if (this.state === ST_AIM) this.power = Math.min(this.power + POW_RATE * dt, MAX_POW);
+      // WASD movement for mode 2
+      if (this.shootMode === 2 && (this.moveDx !== 0 || this.moveDy !== 0)) {
+        let dx = this.moveDx, dy = this.moveDy;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 1) { dx /= len; dy /= len; }
+        const prevSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        this.vx += dx * MOVE_ACCEL;
+        this.vy += dy * MOVE_ACCEL;
+        const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        if (spd > MOVE_MAX_SPD && spd > prevSpeed) {
+          const cap = Math.max(MOVE_MAX_SPD, prevSpeed);
+          this.vx *= cap / spd; this.vy *= cap / spd;
+        }
+        this.moveAngle = Math.atan2(dy, dx);
+        this.angle = this.moveAngle;
+      }
     }
     this.x += this.vx; this.y += this.vy;
     this.vx *= FRIC; this.vy *= FRIC;
     if (Math.abs(this.vx) < MIN_V && Math.abs(this.vy) < MIN_V) { this.vx = 0; this.vy = 0; }
   }
   shoot() {
+    const a = this.shootMode === 2 ? this.moveAngle : this.angle;
     const p = Math.max(this.power, 1);
-    this.vx += Math.cos(this.angle) * p;
-    this.vy += Math.sin(this.angle) * p;
+    this.vx += Math.cos(a) * p;
+    this.vy += Math.sin(a) * p;
     this.state = ST_ROT; this.power = 0;
   }
 }
@@ -508,10 +529,21 @@ export default class Server {
         else if (msg.action === 'cancel' && p.state === ST_AIM) { p.state = ST_ROT; p.power = 0; }
         break;
       }
+      case 'move': {
+        if (slot < 0 || this.gameState !== 'PLAYING') return;
+        const p2 = this.players[slot];
+        if (!p2 || p2.shootMode !== 2) return;
+        p2.moveDx = Math.max(-1, Math.min(1, msg.dx | 0));
+        p2.moveDy = Math.max(-1, Math.min(1, msg.dy | 0));
+        break;
+      }
       case 'mode': {
-        if (slot >= 0 && (msg.mode === 0 || msg.mode === 1)) {
+        if (slot >= 0 && (msg.mode === 0 || msg.mode === 1 || msg.mode === 2)) {
           this.shootModes[slot] = msg.mode;
-          if (this.players[slot]) this.players[slot].shootMode = msg.mode;
+          if (this.players[slot]) {
+            this.players[slot].shootMode = msg.mode;
+            if (msg.mode !== 2) { this.players[slot].moveDx = 0; this.players[slot].moveDy = 0; }
+          }
         }
         break;
       }
@@ -552,7 +584,9 @@ export default class Server {
         if (msg.REST !== undefined) REST = clamp(msg.REST, 0.3, 1.2);
         if (msg.PR !== undefined) { PR = clamp(msg.PR, 8, 36); this.players.forEach(p => p.r = PR); }
         if (msg.BR !== undefined) { BR = clamp(msg.BR, 6, 24); if (this.fb) this.fb.r = BR; }
-        this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR });
+        if (msg.MOVE_ACCEL !== undefined) MOVE_ACCEL = clamp(msg.MOVE_ACCEL, 0.1, 3);
+        if (msg.MOVE_MAX_SPD !== undefined) MOVE_MAX_SPD = clamp(msg.MOVE_MAX_SPD, 1, 15);
+        this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR, MOVE_ACCEL, MOVE_MAX_SPD });
         break;
       }
       case 'taunt': {
