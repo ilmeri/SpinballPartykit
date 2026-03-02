@@ -126,8 +126,8 @@ class Player {
     if (this.occupied) {
       if (this.shootMode === 0 && this.state === ST_ROT) this.angle += ROT_SPD * dt;
       if (this.state === ST_AIM) this.power = Math.min(this.power + POW_RATE * dt, MAX_POW);
-      // WASD movement for mode 2
-      if (this.shootMode === 2 && (this.moveDx !== 0 || this.moveDy !== 0)) {
+      // WASD movement for modes 2 & 3
+      if (this.shootMode >= 2 && (this.moveDx !== 0 || this.moveDy !== 0)) {
         let dx = this.moveDx, dy = this.moveDy;
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len > 1) { dx /= len; dy /= len; }
@@ -140,7 +140,7 @@ class Player {
           this.vx *= cap / spd; this.vy *= cap / spd;
         }
         this.moveAngle = Math.atan2(dy, dx);
-        this.angle = this.moveAngle;
+        if (this.shootMode === 2) this.angle = this.moveAngle;
       }
     }
     this.x += this.vx; this.y += this.vy;
@@ -155,8 +155,9 @@ class Player {
     this.state = ST_ROT; this.power = 0;
   }
   kick() {
-    this.vx += Math.cos(this.moveAngle) * KICK_POWER;
-    this.vy += Math.sin(this.moveAngle) * KICK_POWER;
+    // angle is set from client msg.angle before this call
+    this.vx += Math.cos(this.angle) * KICK_POWER;
+    this.vy += Math.sin(this.angle) * KICK_POWER;
   }
 }
 
@@ -532,23 +533,23 @@ export default class Server {
         if (msg.action === 'down' && p.state !== ST_AIM) { p.state = ST_AIM; p.power = 0; }
         else if (msg.action === 'up' && p.state === ST_AIM) p.shoot();
         else if (msg.action === 'cancel' && p.state === ST_AIM) { p.state = ST_ROT; p.power = 0; }
-        else if (msg.action === 'kick' && p.shootMode === 2) p.kick();
+        else if (msg.action === 'kick' && p.shootMode >= 2) p.kick();
         break;
       }
       case 'move': {
         if (slot < 0 || this.gameState !== 'PLAYING') return;
         const p2 = this.players[slot];
-        if (!p2 || p2.shootMode !== 2) return;
+        if (!p2 || p2.shootMode < 2) return;
         p2.moveDx = Math.max(-1, Math.min(1, msg.dx | 0));
         p2.moveDy = Math.max(-1, Math.min(1, msg.dy | 0));
         break;
       }
       case 'mode': {
-        if (slot >= 0 && (msg.mode === 0 || msg.mode === 1 || msg.mode === 2)) {
+        if (slot >= 0 && msg.mode >= 0 && msg.mode <= 3) {
           this.shootModes[slot] = msg.mode;
           if (this.players[slot]) {
             this.players[slot].shootMode = msg.mode;
-            if (msg.mode !== 2) { this.players[slot].moveDx = 0; this.players[slot].moveDy = 0; }
+            if (msg.mode < 2) { this.players[slot].moveDx = 0; this.players[slot].moveDy = 0; }
           }
         }
         break;
