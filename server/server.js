@@ -6,7 +6,8 @@ let FRIC = 0.982, REST = 0.78;
 const MIN_V = 0.15;
 let MAX_POW = 16, POW_RATE = 20;
 let ROT_SPD = 2.8;
-let MOVE_ACCEL = 0.8, MOVE_MAX_SPD = 5;
+let MOVE_ACCEL = 0.8, MOVE_MAX_SPD = 3;
+let KICK_POWER = 12;
 let PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
@@ -152,6 +153,10 @@ class Player {
     this.vx += Math.cos(a) * p;
     this.vy += Math.sin(a) * p;
     this.state = ST_ROT; this.power = 0;
+  }
+  kick() {
+    this.vx += Math.cos(this.moveAngle) * KICK_POWER;
+    this.vy += Math.sin(this.moveAngle) * KICK_POWER;
   }
 }
 
@@ -527,6 +532,7 @@ export default class Server {
         if (msg.action === 'down' && p.state !== ST_AIM) { p.state = ST_AIM; p.power = 0; }
         else if (msg.action === 'up' && p.state === ST_AIM) p.shoot();
         else if (msg.action === 'cancel' && p.state === ST_AIM) { p.state = ST_ROT; p.power = 0; }
+        else if (msg.action === 'kick' && p.shootMode === 2) p.kick();
         break;
       }
       case 'move': {
@@ -586,7 +592,8 @@ export default class Server {
         if (msg.BR !== undefined) { BR = clamp(msg.BR, 6, 24); if (this.fb) this.fb.r = BR; }
         if (msg.MOVE_ACCEL !== undefined) MOVE_ACCEL = clamp(msg.MOVE_ACCEL, 0.1, 3);
         if (msg.MOVE_MAX_SPD !== undefined) MOVE_MAX_SPD = clamp(msg.MOVE_MAX_SPD, 1, 15);
-        this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR, MOVE_ACCEL, MOVE_MAX_SPD });
+        if (msg.KICK_POWER !== undefined) KICK_POWER = clamp(msg.KICK_POWER, 2, 30);
+        this.broadcast({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR, MOVE_ACCEL, MOVE_MAX_SPD, KICK_POWER });
         break;
       }
       case 'taunt': {

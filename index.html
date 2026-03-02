@@ -110,7 +110,8 @@ let FRIC = 0.982, REST = 0.78;
 const MIN_V = 0.15;
 let MAX_POW = 16, POW_RATE = 20;
 let ROT_SPD = 2.8;
-let MOVE_ACCEL = 0.8, MOVE_MAX_SPD = 5;
+let MOVE_ACCEL = 0.8, MOVE_MAX_SPD = 3;
+let KICK_POWER = 12;
 let PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
@@ -207,6 +208,7 @@ const TUNABLES = [
   { key: 'BR',       label: 'Ball Size',   min: 6, max: 24,    step: 2,     dp: 0 },
   { key: 'MOVE_ACCEL', label: 'Move Accel',  min: 0.1, max: 3,   step: 0.1,   dp: 1 },
   { key: 'MOVE_MAX_SPD', label: 'Move Speed', min: 1,  max: 15,  step: 0.5,   dp: 1 },
+  { key: 'KICK_POWER',   label: 'Kick Power', min: 2,  max: 30,  step: 1,     dp: 0 },
 ];
 
 // ===== Presets =====
@@ -301,6 +303,7 @@ function getParam(k) {
   if (k === 'FRIC') return FRIC; if (k === 'ROT_SPD') return ROT_SPD; if (k === 'REST') return REST;
   if (k === 'PR') return PR; if (k === 'BR') return BR;
   if (k === 'MOVE_ACCEL') return MOVE_ACCEL; if (k === 'MOVE_MAX_SPD') return MOVE_MAX_SPD;
+  if (k === 'KICK_POWER') return KICK_POWER;
 }
 function setParam(k, v) {
   if (k === 'MAX_POW') MAX_POW = v; else if (k === 'POW_RATE') POW_RATE = v;
@@ -309,9 +312,10 @@ function setParam(k, v) {
   else if (k === 'BR') { BR = v; if (fb) fb.r = BR; }
   else if (k === 'MOVE_ACCEL') MOVE_ACCEL = v;
   else if (k === 'MOVE_MAX_SPD') MOVE_MAX_SPD = v;
+  else if (k === 'KICK_POWER') KICK_POWER = v;
 }
 function sendParams() {
-  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR, MOVE_ACCEL, MOVE_MAX_SPD }));
+  if (ws) ws.send(JSON.stringify({ type: 'params', MAX_POW, POW_RATE, FRIC, ROT_SPD, REST, PR, BR, MOVE_ACCEL, MOVE_MAX_SPD, KICK_POWER }));
 }
 
 // ===== Announcer =====
@@ -1209,7 +1213,7 @@ function drawScoreboard() {
     ? 'Hold to aim & charge, release to shoot'
     : myShootMode === 1
     ? 'Click field to aim, hold to charge, release to shoot'
-    : 'WASD to move, Space/Click to charge kick, release to shoot';
+    : 'WASD to move, Space/Click to kick';
   ctx.fillText(hint + '  |  First to ' + WIN_SCORE, W / 2, H - 16);
   // Debug overlay
   ctx.font = '11px monospace'; ctx.fillStyle = '#ff0'; ctx.textAlign = 'left';
@@ -1503,9 +1507,8 @@ function unpackState(buf) {
       const inGrace = aimPos || (performance.now() - mode2ShootTime < MODE2_SHOOT_GRACE);
       if (!inGrace) { p.power = buf[o+5]; p.state = buf[o+6]; }
     } else if (myShootMode === 2) {
-      // WASD mode: client-authoritative for angle; grace period for state/power after kick
-      const inGrace = p.state === ST_AIM || (performance.now() - mode2ShootTime < MODE2_SHOOT_GRACE);
-      if (!inGrace) { p.power = buf[o+5]; p.state = buf[o+6]; }
+      // WASD mode: client-authoritative for angle; accept state/power from server
+      p.power = buf[o+5]; p.state = buf[o+6];
     } else {
       p.angle = buf[o+4]; p.power = buf[o+5]; p.state = buf[o+6];
     }
@@ -1656,6 +1659,7 @@ function joinNetRoom(roomId) {
         if (msg.BR !== undefined) { BR = msg.BR; if (fb) fb.r = BR; }
         if (msg.MOVE_ACCEL !== undefined) MOVE_ACCEL = msg.MOVE_ACCEL;
         if (msg.MOVE_MAX_SPD !== undefined) MOVE_MAX_SPD = msg.MOVE_MAX_SPD;
+        if (msg.KICK_POWER !== undefined) KICK_POWER = msg.KICK_POWER;
         break;
       case 'event':
         handleAnnouncerEvent(msg);
@@ -1808,23 +1812,15 @@ function clearWasdKeys() {
   }
 }
 
-function handleMode3Down() {
+function handleMode3Kick() {
   if (goalScoredBy || winner || mySlot < 0) return;
   const p = players[mySlot];
-  if (!p || p.state === ST_AIM) return;
-  p.state = ST_AIM; p.power = 0;
+  if (!p) return;
   p.angle = myMoveAngle;
-  if (ws) ws.send(JSON.stringify({ type: 'input', action: 'down', angle: myMoveAngle }));
-}
-
-function handleMode3Up() {
-  if (mySlot < 0) return;
-  const p = players[mySlot];
-  if (!p || p.state !== ST_AIM) return;
-  p.angle = myMoveAngle;
-  if (ws) ws.send(JSON.stringify({ type: 'input', action: 'up', angle: myMoveAngle }));
-  p.shoot();
+  p.vx += Math.cos(myMoveAngle) * KICK_POWER;
+  p.vy += Math.sin(myMoveAngle) * KICK_POWER;
   mode2ShootTime = performance.now();
+  if (ws) ws.send(JSON.stringify({ type: 'input', action: 'kick', angle: myMoveAngle }));
 }
 
 // ===== Mode Toggle Buttons =====
@@ -1949,7 +1945,7 @@ window.addEventListener('keydown', e => {
   if (e.key === ' ' || e.code === 'Space') {
     e.preventDefault();
     if (myShootMode === 0) handleInputDown();
-    else if (myShootMode === 2) handleMode3Down();
+    else if (myShootMode === 2) handleMode3Kick();
   }
 });
 
@@ -1967,7 +1963,6 @@ window.addEventListener('keyup', e => {
   if (e.key === ' ' || e.code === 'Space') {
     e.preventDefault();
     if (myShootMode === 0) handleInputUp();
-    else if (myShootMode === 2) handleMode3Up();
   }
 });
 
@@ -1983,7 +1978,7 @@ cvs.addEventListener('mousedown', e => {
   if (result === 'focusName') setTimeout(() => nameEl.focus(), 0); // defer for desktop
   if (gameState === 'PLAYING') {
     if (myShootMode === 1) handleMode2Down(pos);
-    else if (myShootMode === 2) handleMode3Down();
+    else if (myShootMode === 2) handleMode3Kick();
     else handleInputDown();
   }
 });
@@ -1993,8 +1988,7 @@ cvs.addEventListener('mousemove', e => {
 cvs.addEventListener('mouseup', () => {
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
-    else if (myShootMode === 2) handleMode3Up();
-    else handleInputUp();
+    else if (myShootMode !== 2) handleInputUp();
   }
 });
 
@@ -2009,7 +2003,7 @@ cvs.addEventListener('touchstart', e => {
   if (result === 'focusName') nameEl.focus(); // must be synchronous for mobile keyboard
   if (gameState === 'PLAYING') {
     if (myShootMode === 1) handleMode2Down(pos);
-    else if (myShootMode === 2) handleMode3Down();
+    else if (myShootMode === 2) handleMode3Kick();
     else handleInputDown();
   }
 }, { passive: false });
@@ -2021,8 +2015,7 @@ cvs.addEventListener('touchend', e => {
   e.preventDefault();
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
-    else if (myShootMode === 2) handleMode3Up();
-    else handleInputUp();
+    else if (myShootMode !== 2) handleInputUp();
   }
 }, { passive: false });
 
@@ -2031,7 +2024,7 @@ document.addEventListener('mousedown', e => {
   if (e.target === cvs) return; // already handled above
   if (gameState === 'PLAYING') {
     if (myShootMode === 0) handleInputDown();
-    else if (myShootMode === 2) handleMode3Down();
+    else if (myShootMode === 2) handleMode3Kick();
   }
 });
 document.addEventListener('mousemove', e => {
@@ -2041,8 +2034,7 @@ document.addEventListener('mouseup', e => {
   if (e.target === cvs) return;
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
-    else if (myShootMode === 2) handleMode3Up();
-    else handleInputUp();
+    else if (myShootMode !== 2) handleInputUp();
   }
 });
 document.addEventListener('touchstart', e => {
@@ -2050,7 +2042,7 @@ document.addEventListener('touchstart', e => {
   e.preventDefault();
   if (gameState === 'PLAYING') {
     if (myShootMode === 0) handleInputDown();
-    else if (myShootMode === 2) handleMode3Down();
+    else if (myShootMode === 2) handleMode3Kick();
   }
 }, { passive: false });
 document.addEventListener('touchend', e => {
@@ -2058,8 +2050,7 @@ document.addEventListener('touchend', e => {
   e.preventDefault();
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
-    else if (myShootMode === 2) handleMode3Up();
-    else handleInputUp();
+    else if (myShootMode !== 2) handleInputUp();
   }
 }, { passive: false });
 
