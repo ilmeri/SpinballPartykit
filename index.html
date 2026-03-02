@@ -193,6 +193,7 @@ const wasdKeys = { w: false, a: false, s: false, d: false };
 let myMoveDx = 0, myMoveDy = 0;
 let myMoveAngle = 0;
 let myAimAngle = 0; // mode 3: mouse-aim angle (separate from move direction)
+let mode4Moving = false; // mode 3: mouse1 held = moving toward cursor
 
 // Tuning panel
 let tuningOpen = false;
@@ -261,7 +262,10 @@ const chatInputEl = document.getElementById('chat-input');
 const CHAT_MAX_LEN = 80;
 const CHAT_TEAM_COLORS = ['#5ca0f0', '#ff6868'];
 
-chatInputEl.addEventListener('focus', () => { if (myShootMode >= 2) clearWasdKeys(); });
+chatInputEl.addEventListener('focus', () => {
+  if (myShootMode === 2) clearWasdKeys();
+  if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
+});
 chatInputEl.addEventListener('keydown', e => {
   e.stopPropagation();
   if (e.key === 'Enter') {
@@ -1216,7 +1220,7 @@ function drawScoreboard() {
     ? 'Click field to aim, hold to charge, release to shoot'
     : myShootMode === 2
     ? 'WASD to move, Space/Click to kick'
-    : 'WASD to move, aim with mouse, Click/Space to kick';
+    : 'Hold LMB to move toward cursor, RMB to kick';
   ctx.fillText(hint + '  |  First to ' + WIN_SCORE, W / 2, H - 16);
   // Debug overlay
   ctx.font = '11px monospace'; ctx.fillStyle = '#ff0'; ctx.textAlign = 'left';
@@ -1732,6 +1736,7 @@ function leaveRoom() {
   rematchVoteTotal = 0;
   showChatPanel(false);
   clearWasdKeys();
+  mode4Moving = false;
 }
 
 // ===== Input =====
@@ -1837,12 +1842,31 @@ function handleMode4Kick() {
   if (ws) ws.send(JSON.stringify({ type: 'input', action: 'kick', angle: myAimAngle }));
 }
 
+function handleMode4MoveDown() {
+  if (goalScoredBy || winner || mySlot < 0) return;
+  mode4Moving = true;
+  if (ws) ws.send(JSON.stringify({ type: 'moveforward', active: true, angle: myAimAngle }));
+}
+
+function handleMode4MoveUp() {
+  mode4Moving = false;
+  if (ws) ws.send(JSON.stringify({ type: 'moveforward', active: false }));
+}
+
 function handleMode4AimMove(pos) {
   if (mySlot < 0) return;
   const p = players[mySlot];
   if (!p) return;
   myAimAngle = Math.atan2(pos.y - p.y, pos.x - p.x);
   p.angle = myAimAngle;
+  // Update server aim angle while moving
+  if (mode4Moving) {
+    const now = performance.now();
+    if (now - lastAimSend >= AIM_SEND_INTERVAL) {
+      lastAimSend = now;
+      if (ws) ws.send(JSON.stringify({ type: 'moveforward', active: true, angle: myAimAngle }));
+    }
+  }
 }
 
 // ===== Mode Toggle Buttons =====
@@ -1859,8 +1883,9 @@ function handleModeButtonClick(pos) {
         if (ws) ws.send(JSON.stringify({ type: 'input', action: 'cancel' }));
       }
       aimPos = null;
-      // Clear WASD state when leaving WASD modes
-      if (myShootMode >= 2) clearWasdKeys();
+      // Clear movement state when leaving WASD/mouse modes
+      if (myShootMode === 2) clearWasdKeys();
+      if (myShootMode === 3) { mode4Moving = false; if (ws) ws.send(JSON.stringify({ type: 'moveforward', active: false })); }
       myShootMode = i;
       // Initialize angles when entering WASD modes
       if (i >= 2 && p) { myMoveAngle = p.angle; myAimAngle = p.angle; }
@@ -1956,8 +1981,8 @@ window.addEventListener('keydown', e => {
       return;
     }
   }
-  // WASD movement (modes 2 & 3)
-  if (myShootMode >= 2 && gameState === 'PLAYING') {
+  // WASD movement (mode 2 only)
+  if (myShootMode === 2 && gameState === 'PLAYING') {
     const k = e.key.toLowerCase();
     if (k in wasdKeys && !wasdKeys[k]) {
       wasdKeys[k] = true;
@@ -1968,15 +1993,14 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     if (myShootMode === 0) handleInputDown();
     else if (myShootMode === 2) handleMode3Kick();
-    else if (myShootMode === 3) handleMode4Kick();
   }
 });
 
 window.addEventListener('keyup', e => {
   if (document.activeElement === chatInputEl) return;
   if (nameEditing || showCodeInput) return;
-  // WASD release (modes 2 & 3)
-  if (myShootMode >= 2) {
+  // WASD release (mode 2)
+  if (myShootMode === 2) {
     const k = e.key.toLowerCase();
     if (k in wasdKeys && wasdKeys[k]) {
       wasdKeys[k] = false;
@@ -1992,7 +2016,11 @@ window.addEventListener('keyup', e => {
 // Mouse — canvas handles UI clicks + game input
 cvs.addEventListener('contextmenu', e => e.preventDefault());
 cvs.addEventListener('mousedown', e => {
-  if (e.button === 2) { handleCancelAim(); return; }
+  if (e.button === 2) {
+    if (myShootMode === 3) handleMode4Kick();
+    else handleCancelAim();
+    return;
+  }
   const pos = canvasPos(e);
   if (handleAnnouncerButtonClick(pos)) return;
   if (gameState === 'PLAYING' && handleTuningClick(pos)) return;
@@ -2002,7 +2030,7 @@ cvs.addEventListener('mousedown', e => {
   if (gameState === 'PLAYING') {
     if (myShootMode === 1) handleMode2Down(pos);
     else if (myShootMode === 2) handleMode3Kick();
-    else if (myShootMode === 3) handleMode4Kick();
+    else if (myShootMode === 3) handleMode4MoveDown();
     else handleInputDown();
   }
 });
@@ -2013,6 +2041,7 @@ cvs.addEventListener('mousemove', e => {
 cvs.addEventListener('mouseup', () => {
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
+    else if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
     else if (myShootMode < 2) handleInputUp();
   }
 });
@@ -2029,7 +2058,7 @@ cvs.addEventListener('touchstart', e => {
   if (gameState === 'PLAYING') {
     if (myShootMode === 1) handleMode2Down(pos);
     else if (myShootMode === 2) handleMode3Kick();
-    else if (myShootMode === 3) handleMode4Kick();
+    else if (myShootMode === 3) handleMode4MoveDown();
     else handleInputDown();
   }
 }, { passive: false });
@@ -2042,6 +2071,7 @@ cvs.addEventListener('touchend', e => {
   e.preventDefault();
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
+    else if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
     else if (myShootMode < 2) handleInputUp();
   }
 }, { passive: false });
@@ -2052,7 +2082,7 @@ document.addEventListener('mousedown', e => {
   if (gameState === 'PLAYING') {
     if (myShootMode === 0) handleInputDown();
     else if (myShootMode === 2) handleMode3Kick();
-    else if (myShootMode === 3) handleMode4Kick();
+    else if (myShootMode === 3) handleMode4MoveDown();
   }
 });
 document.addEventListener('mousemove', e => {
@@ -2063,6 +2093,7 @@ document.addEventListener('mouseup', e => {
   if (e.target === cvs) return;
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
+    else if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
     else if (myShootMode < 2) handleInputUp();
   }
 });
@@ -2072,7 +2103,7 @@ document.addEventListener('touchstart', e => {
   if (gameState === 'PLAYING') {
     if (myShootMode === 0) handleInputDown();
     else if (myShootMode === 2) handleMode3Kick();
-    else if (myShootMode === 3) handleMode4Kick();
+    else if (myShootMode === 3) handleMode4MoveDown();
   }
 }, { passive: false });
 document.addEventListener('touchend', e => {
@@ -2080,13 +2111,21 @@ document.addEventListener('touchend', e => {
   e.preventDefault();
   if (gameState === 'PLAYING') {
     if (myShootMode === 1 && aimPos) handleMode2Up();
+    else if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
     else if (myShootMode < 2) handleInputUp();
   }
 }, { passive: false });
 
 // Clear WASD on window blur/visibility change
-window.addEventListener('blur', () => { if (myShootMode >= 2) clearWasdKeys(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden && myShootMode >= 2) clearWasdKeys(); });
+window.addEventListener('blur', () => {
+  if (myShootMode === 2) clearWasdKeys();
+  if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  if (myShootMode === 2) clearWasdKeys();
+  if (myShootMode === 3 && mode4Moving) handleMode4MoveUp();
+});
 
 // Fullscreen (with vendor prefixes for mobile)
 function toggleFullscreen() {
@@ -2115,8 +2154,8 @@ function fixedUpdate() {
   if (me && me.occupied) {
     if (myShootMode === 0 && me.state === ST_ROT) me.angle += ROT_SPD * FDT;
     if (me.state === ST_AIM) me.power = Math.min(me.power + POW_RATE * FDT, MAX_POW);
-    // WASD acceleration (modes 2 & 3)
-    if (myShootMode >= 2 && (myMoveDx !== 0 || myMoveDy !== 0)) {
+    // WASD acceleration (mode 2)
+    if (myShootMode === 2 && (myMoveDx !== 0 || myMoveDy !== 0)) {
       let dx = myMoveDx, dy = myMoveDy;
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len > 1) { dx /= len; dy /= len; }
@@ -2128,9 +2167,23 @@ function fixedUpdate() {
         const cap = Math.max(MOVE_MAX_SPD, prevSpeed);
         me.vx *= cap / spd; me.vy *= cap / spd;
       }
-      if (myShootMode === 2) me.angle = myMoveAngle;
+      me.angle = myMoveAngle;
     }
-    if (myShootMode === 3) me.angle = myAimAngle;
+    // Mode 3: mouse1 held = move toward aim direction
+    if (myShootMode === 3) {
+      me.angle = myAimAngle;
+      if (mode4Moving) {
+        const dx = Math.cos(myAimAngle), dy = Math.sin(myAimAngle);
+        const prevSpeed = Math.sqrt(me.vx * me.vx + me.vy * me.vy);
+        me.vx += dx * MOVE_ACCEL;
+        me.vy += dy * MOVE_ACCEL;
+        const spd = Math.sqrt(me.vx * me.vx + me.vy * me.vy);
+        if (spd > MOVE_MAX_SPD && spd > prevSpeed) {
+          const cap = Math.max(MOVE_MAX_SPD, prevSpeed);
+          me.vx *= cap / spd; me.vy *= cap / spd;
+        }
+      }
+    }
     me.x += me.vx; me.y += me.vy;
     me.vx *= FRIC; me.vy *= FRIC;
     if (Math.abs(me.vx) < MIN_V && Math.abs(me.vy) < MIN_V) { me.vx = 0; me.vy = 0; }

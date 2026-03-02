@@ -115,19 +115,21 @@ class Player {
     this.shootMode = 0;
     this.moveDx = 0; this.moveDy = 0;
     this.moveAngle = this.angle;
+    this.moveForward = false; // mode 3: mouse1 held = move toward angle
   }
   reset() {
     this.x = this.sx; this.y = this.sy; this.vx = 0; this.vy = 0;
     this.angle = Math.random() * Math.PI * 2;
     this.power = 0; this.state = ST_ROT;
     this.moveDx = 0; this.moveDy = 0;
+    this.moveForward = false;
   }
   update(dt) {
     if (this.occupied) {
       if (this.shootMode === 0 && this.state === ST_ROT) this.angle += ROT_SPD * dt;
       if (this.state === ST_AIM) this.power = Math.min(this.power + POW_RATE * dt, MAX_POW);
-      // WASD movement for modes 2 & 3
-      if (this.shootMode >= 2 && (this.moveDx !== 0 || this.moveDy !== 0)) {
+      // WASD movement for mode 2
+      if (this.shootMode === 2 && (this.moveDx !== 0 || this.moveDy !== 0)) {
         let dx = this.moveDx, dy = this.moveDy;
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len > 1) { dx /= len; dy /= len; }
@@ -141,6 +143,18 @@ class Player {
         }
         this.moveAngle = Math.atan2(dy, dx);
         if (this.shootMode === 2) this.angle = this.moveAngle;
+      }
+      // Mode 3: mouse1 held = move toward aim angle
+      if (this.shootMode === 3 && this.moveForward) {
+        const dx = Math.cos(this.angle), dy = Math.sin(this.angle);
+        const prevSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        this.vx += dx * MOVE_ACCEL;
+        this.vy += dy * MOVE_ACCEL;
+        const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        if (spd > MOVE_MAX_SPD && spd > prevSpeed) {
+          const cap = Math.max(MOVE_MAX_SPD, prevSpeed);
+          this.vx *= cap / spd; this.vy *= cap / spd;
+        }
       }
     }
     this.x += this.vx; this.y += this.vy;
@@ -539,9 +553,17 @@ export default class Server {
       case 'move': {
         if (slot < 0 || this.gameState !== 'PLAYING') return;
         const p2 = this.players[slot];
-        if (!p2 || p2.shootMode < 2) return;
+        if (!p2 || p2.shootMode !== 2) return;
         p2.moveDx = Math.max(-1, Math.min(1, msg.dx | 0));
         p2.moveDy = Math.max(-1, Math.min(1, msg.dy | 0));
+        break;
+      }
+      case 'moveforward': {
+        if (slot < 0 || this.gameState !== 'PLAYING') return;
+        const p3 = this.players[slot];
+        if (!p3 || p3.shootMode !== 3) return;
+        p3.moveForward = !!msg.active;
+        if (msg.angle !== undefined) p3.angle = msg.angle;
         break;
       }
       case 'mode': {
@@ -549,7 +571,8 @@ export default class Server {
           this.shootModes[slot] = msg.mode;
           if (this.players[slot]) {
             this.players[slot].shootMode = msg.mode;
-            if (msg.mode < 2) { this.players[slot].moveDx = 0; this.players[slot].moveDy = 0; }
+            if (msg.mode !== 2) { this.players[slot].moveDx = 0; this.players[slot].moveDy = 0; }
+            if (msg.mode !== 3) { this.players[slot].moveForward = false; }
           }
         }
         break;
