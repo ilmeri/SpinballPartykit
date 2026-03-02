@@ -8,6 +8,7 @@ let MAX_POW = 16, POW_RATE = 20;
 let ROT_SPD = 2.8;
 let MOVE_ACCEL = 0.8, MOVE_MAX_SPD = 3;
 let KICK_POWER = 12;
+const KICK_MOVE_DELAY = 0.5; // seconds: movement ramps up after kick
 let PR = 18, BR = 12;
 const PMASS = 3, BMASS = 1;
 const WIN_SCORE = 5;
@@ -116,6 +117,7 @@ class Player {
     this.moveDx = 0; this.moveDy = 0;
     this.moveAngle = this.angle;
     this.moveForward = false; // mode 3: mouse1 held = move toward angle
+    this.kickTimer = 0; // ramp-up timer after kick
   }
   reset() {
     this.x = this.sx; this.y = this.sy; this.vx = 0; this.vy = 0;
@@ -123,19 +125,24 @@ class Player {
     this.power = 0; this.state = ST_ROT;
     this.moveDx = 0; this.moveDy = 0;
     this.moveForward = false;
+    this.kickTimer = 0;
   }
   update(dt) {
     if (this.occupied) {
       if (this.shootMode === 0 && this.state === ST_ROT) this.angle += ROT_SPD * dt;
       if (this.state === ST_AIM) this.power = Math.min(this.power + POW_RATE * dt, MAX_POW);
+      // Tick kick ramp-up timer
+      if (this.kickTimer > 0) this.kickTimer = Math.max(0, this.kickTimer - dt);
+      const accelScale = this.kickTimer > 0 ? 1 - this.kickTimer / KICK_MOVE_DELAY : 1;
       // WASD movement for mode 2
       if (this.shootMode === 2 && (this.moveDx !== 0 || this.moveDy !== 0)) {
         let dx = this.moveDx, dy = this.moveDy;
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len > 1) { dx /= len; dy /= len; }
+        const accel = MOVE_ACCEL * accelScale;
         const prevSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-        this.vx += dx * MOVE_ACCEL;
-        this.vy += dy * MOVE_ACCEL;
+        this.vx += dx * accel;
+        this.vy += dy * accel;
         const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
         if (spd > MOVE_MAX_SPD && spd > prevSpeed) {
           const cap = Math.max(MOVE_MAX_SPD, prevSpeed);
@@ -147,9 +154,10 @@ class Player {
       // Mode 3: mouse1 held = move toward aim angle
       if (this.shootMode === 3 && this.moveForward) {
         const dx = Math.cos(this.angle), dy = Math.sin(this.angle);
+        const accel = MOVE_ACCEL * accelScale;
         const prevSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-        this.vx += dx * MOVE_ACCEL;
-        this.vy += dy * MOVE_ACCEL;
+        this.vx += dx * accel;
+        this.vy += dy * accel;
         const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
         if (spd > MOVE_MAX_SPD && spd > prevSpeed) {
           const cap = Math.max(MOVE_MAX_SPD, prevSpeed);
@@ -172,6 +180,7 @@ class Player {
     // angle is set from client msg.angle before this call
     this.vx += Math.cos(this.angle) * KICK_POWER;
     this.vy += Math.sin(this.angle) * KICK_POWER;
+    this.kickTimer = KICK_MOVE_DELAY;
   }
 }
 
